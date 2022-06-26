@@ -1,7 +1,8 @@
 use <raiser.scad>;
+use <raiser-pad.scad>;
 include <parameters.scad>;
 
-e = 0;
+e = 1;
 
 raiser();
 translate([0, 0, raiser_h + e])
