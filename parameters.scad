@@ -13,4 +13,4 @@ raiser_h = 17.5;
 
 catch_h = 2;
 catch_w = 2;
-catch_fit = 0.1;
+catch_fit = 0.2;
