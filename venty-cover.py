@@ -34,6 +34,8 @@ def top_shape(l, w, offset, r = fillet_r):
 def cover():
     with BuildPart() as p:
         oc_r = (1 + (2 * wall_t / bottom_l))
+
+        # The base shape
         with BuildSketch() as base:
             base_shape(bottom_l, bottom_w, 2 * wall_t + fit, c = oc_r * chamfer_l)
 
@@ -42,6 +44,7 @@ def cover():
 
         loft()
 
+        # Vaporizer cut-out
         with BuildSketch(Plane.XY.offset(wall_t)) as base:
             base_shape(bottom_l, bottom_w, fit)
 
@@ -59,6 +62,7 @@ def cover():
         chamfer(p.edges().sort_by(Axis.Z)[-1], length=wall_t / 4)
         chamfer(p.edges().sort_by(Axis.Z)[0], length=chamfer_l / 1.5)
 
+        # USB cut-out.
         with BuildSketch(p.faces().sort_by(Axis.Z)[0]):
             with Locations((0, -usb_offset)):
                 fillet(Rectangle(usb_clearance_w, usb_clearance_l).vertices(), radius=usb_clearance_l / 2)
