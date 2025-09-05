@@ -82,7 +82,10 @@ with BuildPart() as base:
 
     split(bisect_by=Plane.ZY.offset(pic_w0 / 2 - pic_diff / 2), keep=Keep.BOTH)
 
-    
-export_step(base.solids()[1], "picatinny-sling-base.step")
-export_step(base.solids()[0], "picatinny-sling-clamp.step")
+parts = base.solids()
+clamp, base = parts[0], parts[1]
+export_step(base, "picatinny-sling-base.step")
+export_stl(base, "picatinny-sling-base.stl")
+export_step(clamp, "picatinny-sling-clamp.step")
+export_stl(clamp, "picatinny-sling-clamp.stl")
 show_all()
