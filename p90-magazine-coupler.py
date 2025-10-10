@@ -52,5 +52,7 @@ def coupler_nuts():
 bolts = coupler_bolts()
 nuts = coupler_nuts().translate((0, 10 * t, 0))
 bolts.export("p90-magazine-coupler-bolts.step")
+bolts.export("p90-magazine-coupler-bolts.stl")
 nuts.export("p90-magazine-coupler-nuts.step")
+nuts.export("p90-magazine-coupler-nuts.stl")
 show_all()
