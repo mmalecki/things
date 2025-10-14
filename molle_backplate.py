@@ -15,9 +15,9 @@ molle_w = 38
 molle_plate_w = 20
 molle_h = 25
 
-def backplate(w, h, t = 4, top = True, bottom = True):
+def backplate(w, h, t = 4):
     w_mm = molle_plate_w * w
-    h_mm = molle_h * ((1 if top else 0) + (1 if bottom else 0) + h) - molle_fit
+    h_mm = molle_h * (h) - molle_fit
     with BuildPart() as plate:
         with BuildSketch():
             Rectangle(w_mm, h_mm)
@@ -46,6 +46,6 @@ def backplate(w, h, t = 4, top = True, bottom = True):
     return plate
 
 if __name__ == "__main__":
-    backplate_ = backplate(1, 5, top = False, bottom = False)
+    backplate_ = backplate(1, 5)
     show(backplate_)
-    export_step(backplate_.part, "backplate-1-5.step")
+    export_step(backplate_.part, "molle-backplate-1-5.step")
