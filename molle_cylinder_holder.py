@@ -32,6 +32,9 @@ side_t = t / 2 # How thick the sides should be
 # Cord dimensions
 cord_d = 6 + 2 * loose_fit
 
+# Whether to create "speed holes" for material usage reduction/draining/...
+speed_holes = True
+
 def holder():
     h_slots = 5 # 5 horizontal Molle slots in total
 
@@ -88,15 +91,16 @@ def holder():
                     CounterSinkHole((bolt["diameter"] + fit) / 2, counter_sink_radius=(bolt["head_diameter"] + fit) / 2)
 
         # Speed holes
-        with BuildSketch(Plane.XZ):
-            with Locations((0, t/2, -t_mm + t)):
-                with GridLocations(w_mm / 2, molle_h * 2, 2, 2):
-                    SlotCenterToCenter(h_mm / 5, cord_d, 90)
-        extrude(amount=t_mm, mode=Mode.SUBTRACT)
-        chamfer(plate.edges(Select.LAST), length=t/4)
+        if speed_holes:
+            with BuildSketch(Plane.XZ):
+                with Locations((0, t/2, -t_mm + t)):
+                    with GridLocations(w_mm / 2, molle_h * 2, 2, 2):
+                        SlotCenterToCenter(h_mm / 5, cord_d, 90)
+            extrude(amount=t_mm, mode=Mode.SUBTRACT)
+            chamfer(plate.edges(Select.LAST), length=t/4)
 
-        fillet(plate.edges().filter_by(GeomType.CIRCLE).group_by(Axis.Z)[-1], radius=t/4)
-        fillet(plate.edges().filter_by(GeomType.LINE).filter_by(Axis.Y), radius=t/4)
+            fillet(plate.edges().filter_by(GeomType.CIRCLE).group_by(Axis.Z)[-1], radius=t/4)
+            fillet(plate.edges().filter_by(GeomType.LINE).filter_by(Axis.Y), radius=t/4)
 
     return plate
 
