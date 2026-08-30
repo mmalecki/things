@@ -106,5 +106,5 @@ def holder():
 
 holder_ = holder()
 show(holder_)
-export_step(holder_.part, "molle-cylinder-elastic-cord-holder.step")
-export_stl(holder_.part, "molle-cylinder-elastic-cord-stl.step")
+export_step(holder_.part, "molle-cylinder-elastic-cord-pouch.step")
+export_stl(holder_.part, "molle-cylinder-elastic-cord-pouch.stl")
