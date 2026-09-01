@@ -2,6 +2,7 @@
 # (with a XT30 output). It likely won't work for the stock PCB.
 # Original designs can easily be measured and plugged in:
 # https://oshwlab.com/wagiminator/ch224k-usb-pd-decoy (set `offset = 0`!)
+import math
 import cadquery as cq
 import cq_queryabolt as queryabolt
 from ocp_vscode import Camera, set_defaults, show_all
@@ -43,18 +44,25 @@ def bottom():
     c = c.faces(">Z").workplane().placeSketch(s.copy()).extrude(pcb_t)
     c = c.faces(">Z").workplane().rect(w + fit, l + fit).cutBlind(-pcb_t)
     c = c.faces(">Z").workplane().center(0, offset).rarray(m_w, m_l, 2, 2).boltHole(bolt, clearance=-fit)
+    c = c.edges("%Circle").edges(">>Z[1] or >>Z[2]").chamfer(0.5)
+    c = c.faces(">Z[1]").edges("<Y").fillet(wall_t / 3)
+    c = c.faces(">Z[1]").edges("not %Circle").fillet(wall_t / 3)
+    c = c.faces(">Z[2]").edges(">Y or <Y").fillet(wall_t / 3)
     return c
 
 def top():
     c = Workplane("XY").placeSketch(s).extrude(2 * wall_t)
-
     c = c.faces("<Z").workplane().placeSketch(s.copy()).extrude(pcb_h)
     c = c.faces("<Z").workplane().rect(w + fit, l + fit).cutBlind(-pcb_h)
     c = c.faces("<Z").workplane().move(0, l / 2 + wall_t / 2).rect(usb_w, wall_t).cutBlind(-usb_h)
     c = c.faces("<Z").workplane().move(0, -(l / 2 + wall_t / 2)).rect(pwr_w, wall_t).cutBlind(-pwr_h)
     c = c.faces(">Z[1]").edges(">X or <X").fillet(wall_t / 2)
-    c = c.faces(">Z[2]").edges("|Y").edges("(>X or <X) or (>>X[1] or <<X[1])").fillet(wall_t / 2)
+    c = c.faces(">Z[2]").edges("|Y").edges("(>X or <X) or (>>X[1] or <<X[1])").fillet(wall_t)
     c = c.faces(">Z").workplane().center(0, offset).rarray(m_w, m_l, 2, 2).cboreBoltHole(bolt, clearance=fit)
+    h = pcb_h + 2 * wall_t
+    r = wall_t * 2
+    n = math.floor(l / (2 * r))
+    c = c.faces(">X").workplane(centerOption="CenterOfBoundBox").center(0, -h / 2).rarray(r * 2, 1, n, 1).slot2D(h, r, 75).cutThruAll()
     return c
 
 bottom_ = bottom()
