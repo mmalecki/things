@@ -1,0 +1,6 @@
+[submodule "catchnhole"]
+	path = catchnhole
+	url = https://github.com/mmalecki/catchnhole
+[submodule "frame-holder"]
+	path = frame-holder
+	url = https://github.com/mmalecki/prusa-i3-top-frame-holder
