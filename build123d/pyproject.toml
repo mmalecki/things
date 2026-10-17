@@ -1,5 +1,5 @@
 [project]
-name = "mmalecki-things"
+name = "mmalecki-things-build123d"
 version = "0.0.0"
 authors = [
     { name = "Maciej Małecki", email = "me@mmalecki.com" },
@@ -7,7 +7,6 @@ authors = [
 license = "MIT"
 dependencies = [
     "build123d>=0.13.0",
-    "cadquery>=2.8.0",
     "cq-queryabolt>=0.1.2",
     "ocp-vscode>=4.2.0"
 ]

@@ -1,0 +1,15 @@
+[project]
+name = "mmalecki-things-cadquery"
+version = "0.0.0"
+authors = [
+    { name = "Maciej Małecki", email = "me@mmalecki.com" },
+]
+license = "MIT"
+dependencies = [
+    "cadquery>=2.8.0",
+    "cq-queryabolt>=0.1.2",
+    "ocp-vscode>=4.2.0"
+]
+
+[project.urls]
+Repository = "https://github.com/mmalecki/things"
