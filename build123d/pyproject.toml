@@ -8,7 +8,7 @@ license = "MIT"
 dependencies = [
     "build123d>=0.13.0",
     "cq-queryabolt>=0.1.2",
-    "ocp-vscode>=4.2.0"
+    "ocp-viewer>=1.2.0",
 ]
 
 [project.urls]
