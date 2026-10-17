@@ -13,6 +13,9 @@ RUN apt install -y --no-install-recommends \
     openssh-client netcat-openbsd gnupg uidmap slirp4netns iproute2 \
     dbus-bin libnotify-bin libsecret-tools \
     libgl1 libx11-6 \
+    libnspr4 libnss3 libatk1.0-0 libatk-bridge2.0-0 libatspi2.0-0 \
+    libxcomposite1 libxdamage1 libxrandr2 libgbm1 libxkbcommon0 \
+    libasound2 fontconfig \
     && ln -s /usr/bin/fdfind /usr/local/bin/fd
 
 ARG UV_VERSION=latest
@@ -26,7 +29,11 @@ RUN rm -rf /var/lib/apt/lists/*
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    UV_PYTHON_DOWNLOADS=never
+    UV_PYTHON_DOWNLOADS=manual \
+    UV_PYTHON_INSTALL_DIR=/opt/uv/python
+
+# The text-to-cad skill runs cadgen on a uv-managed Python 3.13.
+RUN uv python install --no-bin 3.13
 
 ARG WORK_UID=1000
 RUN groupadd work
