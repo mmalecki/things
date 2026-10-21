@@ -1,8 +1,9 @@
 """Aluminum extrusion table for a LumenPnP v4
 
 3030 V-slot legs and top frame, 2020 V-slot lower stretchers, all mocked as
-extruded rectangles, plus a mock table top. The table is centered on the XY
-origin, floor at Z=0, X is width and Y is depth.
+extruded rectangles, plus a mock table top and a lower shelf resting on the
+front and back stretchers, cut short between the legs. The table is centered
+on the XY origin, floor at Z=0, X is width and Y is depth.
 
 Exports the model to STEP and its bill of materials to CSV.
 """
@@ -29,6 +30,9 @@ stretcher = 20  # 2020 profile, lower stretchers
 
 frame_h = height - top_t  # Floor to the top of the frame
 stretcher_z = 150  # Floor to the bottom of the lower stretchers
+
+shelf_t = 10  # Lower shelf thickness
+shelf_gap = 1  # Per side, between the shelf and the legs
 
 
 def extrusion(size, length, direction):
@@ -78,6 +82,14 @@ def table():
     top.label = "top"
     top.bom = ("Wood panel", (top_w, top_d, top_t))
     parts.append(top)
+
+    # Spans the depth onto the front and back stretchers, and fits between
+    # the legs along the width
+    shelf_w = top_w - 2 * leg - 2 * shelf_gap
+    shelf = Pos(0, 0, stretcher_z + stretcher + shelf_t / 2) * Box(shelf_w, top_d, shelf_t)
+    shelf.label = "shelf"
+    shelf.bom = ("Wood panel", (shelf_w, top_d, shelf_t))
+    parts.append(shelf)
 
     return Compound(children=parts, label="lumenpnp_table")
 
