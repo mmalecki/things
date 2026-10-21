@@ -1,6 +1,6 @@
 """Cover for the Storz and Bickel Venty vaporizer, meant to be printed out of Varioshore TPU"""
 from build123d import *
-from ocp_vscode import *
+from ocp_viewer import *
 
 chamfer_l = 4.0
 fillet_r = 3.0

@@ -3,7 +3,7 @@ import os
 import math
 from build123d import *
 import cq_queryabolt as queryabolt
-from ocp_vscode import *
+from ocp_viewer import *
 
 bolt = "M6"
 
@@ -16,7 +16,7 @@ nut_t = nut["thickness"]
 bolt_fit = 0.2
 
 set_port(int(os.environ.get("OCP_PORT", 3939)))
-set_defaults(reset_camera=False)
+set_defaults(reset_camera=Camera.CENTER)
 
 wall_t = 3 # Wall thickness
 

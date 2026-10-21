@@ -1,6 +1,6 @@
 import math
 from build123d import *
-from ocp_vscode import *
+from ocp_viewer import *
 import cq_queryabolt as queryabolt
 
 fastener = "M3"

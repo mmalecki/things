@@ -10,7 +10,7 @@ import csv
 import os
 from collections import Counter
 from build123d import *
-from ocp_vscode import *
+from ocp_viewer import *
 
 set_port(int(os.environ.get("OCP_PORT", 3939)))
 

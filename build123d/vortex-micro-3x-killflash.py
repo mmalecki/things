@@ -1,6 +1,6 @@
 import math
 from build123d import *
-from ocp_vscode import *
+from ocp_viewer import *
 
 set_defaults(reset_camera=Camera.KEEP)
 
