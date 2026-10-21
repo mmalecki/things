@@ -3,8 +3,12 @@
 3030 V-slot legs and top frame, 2020 V-slot lower stretchers, all mocked as
 extruded rectangles, plus a mock table top. The table is centered on the XY
 origin, floor at Z=0, X is width and Y is depth.
+
+Exports the model to STEP and its bill of materials to CSV.
 """
+import csv
 import os
+from collections import Counter
 from build123d import *
 from ocp_vscode import *
 
@@ -31,7 +35,9 @@ def extrusion(size, length, direction):
     """A square profile of `size`, `length` long, starting at the origin and
     running along `direction` ("X", "Y" or "Z"), centered on that axis."""
     plane = {"X": Plane.YZ, "Y": Plane.XZ.reverse(), "Z": Plane.XY}[direction]
-    return extrude(plane * Rectangle(size, size), amount=length)
+    part = extrude(plane * Rectangle(size, size), amount=length)
+    part.bom = (f"{size}{size} V-slot", (length,))
+    return part
 
 
 def ring(size, z, name):
@@ -70,12 +76,29 @@ def table():
 
     top = Pos(0, 0, frame_h + top_t / 2) * Box(top_w, top_d, top_t)
     top.label = "top"
+    top.bom = ("Wood panel", (top_w, top_d, top_t))
     parts.append(top)
 
     return Compound(children=parts, label="lumenpnp_table")
 
 
+def bom(assembly):
+    """(quantity, item, size) rows counted from the `bom` tags, an (item,
+    dimensions in mm) pair, of `assembly`'s parts."""
+    counts = Counter(part.bom for part in assembly.children)
+    return [
+        (qty, item, " x ".join(f"{d:g}" for d in dims) + " mm")
+        for (item, dims), qty in sorted(counts.items())
+    ]
+
+
 table_ = table()
 export_step(table_, "lumenpnp-table.step")
+
+bom_ = bom(table_)
+with open("lumenpnp-table-bom.csv", "w", newline="") as f:
+    csv.writer(f).writerows([("quantity", "item", "size"), *bom_])
+for qty, item, size in bom_:
+    print(f"{qty:>3} x {item:<12} {size}")
 
 show(table_)
