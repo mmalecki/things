@@ -48,11 +48,11 @@ def ring(size, z, name):
     zc = z + size / 2
     members = []
     for side, sy in (("front", -1), ("back", 1)):
-        m = Pos(-x_len / 2, sy * (top_d / 2 - size / 2), zc) * extrusion(size, x_len, "X")
+        m = Pos(-x_len / 2, sy * (top_d / 2 - leg / 2), zc) * extrusion(size, x_len, "X")
         m.label = f"{name}_x:{side}"
         members.append(m)
     for side, sx in (("left", -1), ("right", 1)):
-        m = Pos(sx * (top_w / 2 - size / 2), -y_len / 2, zc) * extrusion(size, y_len, "Y")
+        m = Pos(sx * (top_w / 2 - leg / 2), -y_len / 2, zc) * extrusion(size, y_len, "Y")
         m.label = f"{name}_y:{side}"
         members.append(m)
     return members
