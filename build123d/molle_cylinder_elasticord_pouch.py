@@ -1,7 +1,7 @@
 import math
 from build123d import *
 from ocp_vscode import *
-import cq_queryabolt as queryabolt
+from bd_buildabolt import bolt_data
 
 import molle_backplate
 
@@ -9,8 +9,7 @@ set_defaults(reset_camera=Camera.KEEP)
 
 fastener = "M3"
 
-bolt = queryabolt.boltData(fastener, kind="countersunk")
-nut = queryabolt.nutData(fastener)
+bolt = bolt_data(fastener, kind="countersunk")
 
 fit = 0.2
 loose_fit = 0.5
@@ -88,7 +87,7 @@ def holder():
         with Locations(Plane.XZ.rotated((0, 0, 180))):
             with Locations((0, t/2 , -t_mm + t)):
                 with GridLocations(molle_w, molle_h * 2, 1, h_slots - 2):
-                    CounterSinkHole((bolt["diameter"] + fit) / 2, counter_sink_radius=(bolt["head_diameter"] + fit) / 2)
+                    CounterSinkHole((bolt.diameter + fit) / 2, counter_sink_radius=(bolt.head_diameter + fit) / 2)
 
         # Speed holes
         if speed_holes:

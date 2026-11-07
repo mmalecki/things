@@ -21,6 +21,14 @@ wheels = [
 ]
 
 [[package]]
+name = "bd-buildabolt"
+version = "0.0.0"
+source = { git = "ssh://git@github.com/mmalecki/bd-buildabolt.git#bc9f2e628748f980d737f887ad7b667ebd461072" }
+dependencies = [
+    { name = "build123d" },
+]
+
+[[package]]
 name = "bd-materials"
 version = "0.2.4"
 source = { registry = "https://pypi.org/simple" }
@@ -241,15 +249,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d8/53/6f443c9a4a8358a93a6792e2acffb9d9d5cb0a5cfd8802644b7b1c9a02e4/colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44", size = 27697, upload-time = "2022-10-25T02:36:22.414Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6", size = 25335, upload-time = "2022-10-25T02:36:20.889Z" },
-]
-
-[[package]]
-name = "cq-queryabolt"
-version = "0.1.2"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/bb/09/4662074ef1c370077d39a0c4439e8569d3fcf8d22e39f0a3b6a112a59f55/cq_queryabolt-0.1.2.tar.gz", hash = "sha256:5b9b60caeb941cbc37c511b74a191d852c0ee55ab8bf8dcb02c03cdc44576f7a", size = 5160, upload-time = "2024-11-18T14:19:36.023Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ba/65/9e460ee9181c18f04c5c4351efbf09d540f30e9dd4621a5de3e79fe68966/cq_queryabolt-0.1.2-py2.py3-none-any.whl", hash = "sha256:0bbcb92cabbefd1b144601afe363f5e0d6fe1ccb6a6a44df89913dfdca992b00", size = 5947, upload-time = "2024-11-18T14:19:34.267Z" },
 ]
 
 [[package]]
@@ -488,15 +487,15 @@ name = "mmalecki-things-build123d"
 version = "0.0.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "bd-buildabolt" },
     { name = "build123d" },
-    { name = "cq-queryabolt" },
     { name = "ocp-vscode" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "bd-buildabolt", git = "ssh://git@github.com/mmalecki/bd-buildabolt.git" },
     { name = "build123d", specifier = ">=0.13.0" },
-    { name = "cq-queryabolt", specifier = ">=0.1.2" },
     { name = "ocp-vscode", specifier = ">=4.2.0" },
 ]
 

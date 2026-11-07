@@ -1,13 +1,13 @@
 import math
 from build123d import *
 from ocp_vscode import *
-import cq_queryabolt as queryabolt
+from bd_buildabolt import bolt_data, nut_data
 set_defaults(reset_camera=Camera.CENTER)
 
 
 bolt_ = "M3"
-bolt = queryabolt.boltData(bolt_)
-nut = queryabolt.nutData(bolt_)
+bolt = bolt_data(bolt_)
+nut = nut_data(bolt_)
 
 t = 5
 fit = 0.25
@@ -60,12 +60,12 @@ with BuildPart() as base:
     extrude(amount=l)
 
     with BuildSketch(base.faces().sort_by(Axis.X)[0]):
-        Circle((bolt["diameter"] + bolt_fit) / 2)
+        Circle((bolt.diameter + bolt_fit) / 2)
     extrude(amount=-w, mode=Mode.SUBTRACT)
 
     with BuildSketch(base.faces().sort_by(Axis.X)[-1]):
-        RegularPolygon((nut["width"] / math.sqrt(3)), 6, rotation=360 / 6 / 2)
-    extrude(amount=-nut["thickness"], mode=Mode.SUBTRACT)
+        RegularPolygon((nut.width / math.sqrt(3)), 6, rotation=360 / 6 / 2)
+    extrude(amount=-nut.thickness, mode=Mode.SUBTRACT)
 
     with BuildSketch(Plane.XY):
         with Locations(((w - eye_w) / 2, pic_h + t / 2)):

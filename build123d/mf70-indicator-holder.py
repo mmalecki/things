@@ -2,17 +2,17 @@
 import os
 import math
 from build123d import *
-import cq_queryabolt as queryabolt
+from bd_buildabolt import bolt_data, nut_data
 from ocp_vscode import *
 
 bolt = "M6"
 
-bolt_ = queryabolt.boltData(bolt)
-bolt_d = bolt_["diameter"]
-nut = queryabolt.nutData(bolt, kind="hexagon_thin")
-nut_w = nut["width"]
-nut_r = 2 * nut["width"] * math.sqrt(3) / 6
-nut_t = nut["thickness"]
+bolt_ = bolt_data(bolt)
+bolt_d = bolt_.diameter
+nut = nut_data(bolt, kind="hexagon_thin")
+nut_w = nut.width
+nut_r = 2 * nut.width * math.sqrt(3) / 6
+nut_t = nut.thickness
 bolt_fit = 0.2
 
 set_port(int(os.environ.get("OCP_PORT", 3939)))
@@ -64,7 +64,7 @@ def holder(spindle_clearance):
             RegularPolygon(nut_r, 6, rotation=90)
             with Locations((0, nut_r)):
                 Rectangle(nut_w, h)
-        extrude(amount=-nut["thickness"] - bolt_fit, mode=Mode.SUBTRACT)
+        extrude(amount=-nut.thickness - bolt_fit, mode=Mode.SUBTRACT)
 
         with BuildSketch(mount_plane):
             Circle((bolt_d + bolt_fit) / 2)

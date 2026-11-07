@@ -1,12 +1,12 @@
 import math
 from build123d import *
 from ocp_vscode import *
-import cq_queryabolt as queryabolt
+from bd_buildabolt import bolt_data, nut_data
 
 fastener = "M3"
 
-bolt = queryabolt.boltData(fastener)
-nut = queryabolt.nutData(fastener)
+bolt = bolt_data(fastener)
+nut = nut_data(fastener)
 
 molle_fit = 5
 fit = 0.2
@@ -34,13 +34,13 @@ def backplate(w, h, t = 4):
 
         with BuildSketch(plate.faces().sort_by(Axis.Z)[0]):
             with GridLocations(molle_w, molle_h * 2, w, h - 2):
-                Circle((bolt["diameter"] + fit) / 2)
+                Circle((bolt.diameter + fit) / 2)
         extrude(amount=-2 * t, mode=Mode.SUBTRACT)
 
         with BuildSketch(plate.faces().sort_by(Axis.Z)[0]):
             with GridLocations(molle_w, molle_h * 2, w, h - 2):
-                RegularPolygon((nut["width"] / math.sqrt(3)), 6)
-        extrude(amount=-nut["thickness"] * 1.5, mode=Mode.SUBTRACT)
+                RegularPolygon((nut.width / math.sqrt(3)), 6)
+        extrude(amount=-nut.thickness * 1.5, mode=Mode.SUBTRACT)
 
 
     return plate

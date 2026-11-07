@@ -6,10 +6,13 @@ authors = [
 ]
 license = "MIT"
 dependencies = [
+    "bd-buildabolt",
     "build123d>=0.13.0",
-    "cq-queryabolt>=0.1.2",
-    "ocp-vscode>=4.2.0"
+    "ocp-vscode>=4.2.0",
 ]
 
 [project.urls]
 Repository = "https://github.com/mmalecki/things"
+
+[tool.uv.sources]
+bd-buildabolt = { git = "ssh://git@github.com/mmalecki/bd-buildabolt.git" }
