@@ -1,11 +1,9 @@
-import math
 from build123d import *
 from ocp_vscode import *
-from bd_buildabolt import bolt_data, nut_data
+from bd_buildabolt import BoltHole, NutcatchParallel, nut_data
 
 fastener = "M3"
 
-bolt = bolt_data(fastener)
 nut = nut_data(fastener)
 
 molle_fit = 5
@@ -32,15 +30,13 @@ def backplate(w, h, t = 4):
         fillet([by_z[-3], by_z[-2], by_z[-1]], radius=t / 3)
         chamfer(plate.faces().sort_by(Axis.Z)[0].edges(), length=t/3)
 
-        with BuildSketch(plate.faces().sort_by(Axis.Z)[0]):
+        with Locations(Plane(plate.faces().sort_by(Axis.Z)[0])):
             with GridLocations(molle_w, molle_h * 2, w, h - 2):
-                Circle((bolt.diameter + fit) / 2)
-        extrude(amount=-2 * t, mode=Mode.SUBTRACT)
+                BoltHole(fastener, depth=2 * t, clearance=fit)
 
-        with BuildSketch(plate.faces().sort_by(Axis.Z)[0]):
+        with Locations(Plane(plate.faces().sort_by(Axis.Z)[0])):
             with GridLocations(molle_w, molle_h * 2, w, h - 2):
-                RegularPolygon((nut.width / math.sqrt(3)), 6)
-        extrude(amount=-nut.thickness * 1.5, mode=Mode.SUBTRACT)
+                NutcatchParallel(nut, height_clearance=nut.thickness / 2)
 
 
     return plate

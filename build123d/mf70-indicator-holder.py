@@ -2,17 +2,14 @@
 import os
 import math
 from build123d import *
-from bd_buildabolt import bolt_data, nut_data
+from bd_buildabolt import BoltHole, NutcatchSidecut, nut_data
 from ocp_vscode import *
 
 bolt = "M6"
 
-bolt_ = bolt_data(bolt)
-bolt_d = bolt_.diameter
 nut = nut_data(bolt, kind="hexagon_thin")
 nut_w = nut.width
 nut_r = 2 * nut.width * math.sqrt(3) / 6
-nut_t = nut.thickness
 bolt_fit = 0.2
 
 set_port(int(os.environ.get("OCP_PORT", 3939)))
@@ -60,15 +57,16 @@ def holder(spindle_clearance):
 
         bolt_l = 20
         clamp_l = 12
-        with BuildSketch(mount_plane.offset(-(bolt_l - clamp_l - nut_t))):
-            RegularPolygon(nut_r, 6, rotation=90)
-            with Locations((0, nut_r)):
-                Rectangle(nut_w, h)
-        extrude(amount=-nut.thickness - bolt_fit, mode=Mode.SUBTRACT)
+        # Sidecut grows along local +Z, so start at the back of the nut slot.
+        with Locations(mount_plane.offset(-(bolt_l - clamp_l + bolt_fit))):
+            NutcatchSidecut(nut, height_clearance=bolt_fit, depth=nut_r + h / 2)
 
-        with BuildSketch(mount_plane):
-            Circle((bolt_d + bolt_fit) / 2)
-        extrude(amount=-spindle_clearance + spindle_top_d / 2 - spindle_d / 2 + wall_t, mode=Mode.SUBTRACT)
+        with Locations(mount_plane):
+            BoltHole(
+                bolt,
+                depth=spindle_clearance - spindle_top_d / 2 + spindle_d / 2 - wall_t,
+                clearance=bolt_fit,
+            )
 
         chamfer(hold.faces().sort_by(Axis.Z)[-1].edges(), wall_t / 4)
         chamfer(hold.faces().sort_by(Axis.Y)[-1].edges().filter_by(Axis.Z), wall_t / 6)

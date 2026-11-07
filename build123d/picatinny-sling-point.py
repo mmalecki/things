@@ -1,13 +1,10 @@
-import math
 from build123d import *
 from ocp_vscode import *
-from bd_buildabolt import bolt_data, nut_data
+from bd_buildabolt import BoltHole, NutcatchParallel
 set_defaults(reset_camera=Camera.CENTER)
 
 
-bolt_ = "M3"
-bolt = bolt_data(bolt_)
-nut = nut_data(bolt_)
+fastener = "M3"
 
 t = 5
 fit = 0.25
@@ -59,13 +56,12 @@ with BuildPart() as base:
             add(pic, mode=Mode.SUBTRACT)
     extrude(amount=l)
 
-    with BuildSketch(base.faces().sort_by(Axis.X)[0]):
-        Circle((bolt.diameter + bolt_fit) / 2)
-    extrude(amount=-w, mode=Mode.SUBTRACT)
+    with Locations(Plane(base.faces().sort_by(Axis.X)[0])):
+        BoltHole(fastener, depth=w, clearance=bolt_fit)
 
-    with BuildSketch(base.faces().sort_by(Axis.X)[-1]):
-        RegularPolygon((nut.width / math.sqrt(3)), 6, rotation=360 / 6 / 2)
-    extrude(amount=-nut.thickness, mode=Mode.SUBTRACT)
+    with Locations(Plane(base.faces().sort_by(Axis.X)[-1])):
+        with Locations(Rot(Z=30)):
+            NutcatchParallel(fastener)
 
     with BuildSketch(Plane.XY):
         with Locations(((w - eye_w) / 2, pic_h + t / 2)):
