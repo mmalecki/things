@@ -116,7 +116,7 @@ def _box(width: float, length: float, low: float, high: float, y: float = 0) -> 
 def make_riser(
     bottom_slot_count: int = 5,
     top_slot_count: int = 7,
-    bolt_slots: Iterable[int] = (1, 5),
+    bolt_slots: Iterable[int] | None = None,
     bolt: BoltSpec = "M3",
     nut: NutSpec = "M3",
     riser_height: float = 20.0,
@@ -133,6 +133,7 @@ def make_riser(
     bolt_fit is DIAMETRAL shaft/head clearance, across-flats nut clearance,
     and extra recess depth. No lateral fit is added to the lower dovetail:
     split_gap supplies jaw take-up without deliberately oversizing the rail.
+    bolt_slots=None selects the first and last bottom slots (once if count=1).
     Empty bolt_slots is allowed for an unfastened mockup. Invalid/duplicate
     slot numbers and geometrically impossible fastener/height choices raise.
     """
@@ -145,7 +146,7 @@ def make_riser(
     _finite(top_offset, "top_offset", -math.inf)
     if min_wall <= 0 or not 0 < split_gap < NECK_WIDTH - 2 * min_wall:
         raise ValueError("min_wall and split_gap must leave material in both halves")
-    selected = tuple(bolt_slots)
+    selected = tuple(sorted({1, bottom_slot_count})) if bolt_slots is None else tuple(bolt_slots)
     if any(isinstance(i, bool) or not isinstance(i, int)
            or not 1 <= i <= bottom_slot_count for i in selected):
         raise ValueError("bolt_slots must contain 1-based bottom slot numbers")
@@ -198,7 +199,10 @@ def make_riser(
     if riser_height < minimum_height:
         raise ValueError(f"riser_height must be >= {minimum_height:.4f} mm for these fasteners")
     width = RAIL_WIDTH + 2 * (max(head_depth, nut_depth) + min_wall)
-    bottom_z = -NECK_DEPTH
+    bottom_z = min(-NECK_DEPTH,
+                   bolt_z - max(head_radius, (hex_nut.width + bolt_fit) / 2) - min_wall)
+    if bottom_z < -RAIL_BASE_DEPTH:
+        raise ValueError("fastener pockets extend below the host rail mounting clearance")
 
     # Bottom saddle and a narrow, tapered bridge. The host-rail opening is
     # cut through the ENTIRE Y envelope, so an offset/long top never blocks it.
@@ -284,11 +288,8 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, default=Path(__file__).resolve().parent)
     parser.add_argument("--show", action="store_true", help="also open in OCP Viewer")
     args = parser.parse_args()
-    slots = args.bolt_slots
-    if slots is None:
-        slots = tuple(sorted({1, args.bottom_slots}))
     try:
-        riser = make_riser(args.bottom_slots, args.top_slots, slots, args.bolt,
+        riser = make_riser(args.bottom_slots, args.top_slots, args.bolt_slots, args.bolt,
                            args.nut or args.bolt, args.height,
                            top_offset=args.top_offset, bolt_fit=args.bolt_fit,
                            split_gap=args.split_gap)

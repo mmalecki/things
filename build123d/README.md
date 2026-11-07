@@ -12,6 +12,24 @@ Fastener dimensions and native hole/nut-pocket primitives come from
 is Git over SSH, pinned to a commit in `uv.lock`; syncing requires GitHub SSH
 access. The CadQuery designs in `../cadquery/` have a separate environment.
 
+## Picatinny riser
+
+[`picatinny_riser.py`](picatinny_riser.py) creates a parametric, longitudinally
+split riser with independently sized/offset top and bottom slot patterns,
+arbitrary lower bolt positions, and `bd-buildabolt` socket-head/nut pockets.
+Defaults: 5 bottom slots, 7 top slots, M3 bolts in slots 1 and 5, 20 mm rise,
+`bolt_fit=0.2`.
+
+```sh
+uv run python picatinny_riser.py
+uv run python picatinny_riser.py --bottom-slots 4 --top-slots 6 \
+  --bolt-slots 1 2 4 --height 18 --top-offset 3
+```
+
+It exports an assembly STEP and two separate STEP/STL halves, split-face-down
+for printing. Runs headlessly; `--show` optionally uses OCP Viewer. See
+[parameters, datums, output files and fit limitations](picatinny-riser.md).
+
 ## Regression checks
 
 ```sh
