@@ -114,6 +114,45 @@ class RiserGeometryTest(unittest.TestCase):
                       and abs(f.normal_at().Z - 1) < LINEAR_TOL]
             self.assertEqual(len(ledges), 0)
 
+    def assertBottomChamfers(self, shapes, riser, chamfer):
+        bevels = []
+        for side, part in zip((-1, 1), sorted(shapes, key=lambda p: p.center().X)):
+            faces = [f for f in part.faces() if f.geom_type == bd.GeomType.PLANE
+                     and abs(f.normal_at().X - side / math.sqrt(2)) < LINEAR_TOL
+                     and abs(f.normal_at().Z + 1 / math.sqrt(2)) < LINEAR_TOL
+                     and abs(f.center().X - side * (riser.body_width / 2 - chamfer / 2)) < LINEAR_TOL]
+            self.assertEqual(len(faces), 1)
+            face = faces[0]
+            bounds = face.bounding_box()
+            self.assertAlmostEqual(bounds.size.X, chamfer, delta=LINEAR_TOL)
+            self.assertAlmostEqual(bounds.size.Z, chamfer, delta=LINEAR_TOL)
+            self.assertAlmostEqual(bounds.min.Z, part.bounding_box().min.Z, delta=LINEAR_TOL)
+            self.assertAlmostEqual(bounds.min.Y, -riser.bottom_length / 2, delta=LINEAR_TOL)
+            self.assertAlmostEqual(bounds.max.Y, riser.bottom_length / 2, delta=LINEAR_TOL)
+            self.assertAlmostEqual(face.area, math.sqrt(2) * chamfer * riser.bottom_length,
+                                   delta=VOLUME_TOL)
+            bevels.append(face)
+        return bevels
+
+    def test_outer_bottom_chamfers(self):
+        for chamfer, kwargs in ((1.0, {}), (0.5, dict(bolt="M4", nut="M4", top_offset=3))):
+            with self.subTest(chamfer=chamfer, **kwargs):
+                r = pr.make_riser(bottom_chamfer=chamfer, **kwargs)
+                sharp = pr.make_riser(bottom_chamfer=0, **kwargs)
+                self.assertTwoHalves(r)
+                self.assertBottomChamfers((r.left, r.right), r, chamfer)
+                for before, after in ((sharp.left, r.left), (sharp.right, r.right)):
+                    # Exactly one triangular prism removed per half; nothing added.
+                    removed = before - after
+                    self.assertEqual(len(removed.solids()), 1)
+                    self.assertAlmostEqual(volume(removed), chamfer ** 2 * r.bottom_length / 2,
+                                           delta=VOLUME_TOL)
+                    self.assertLess(volume(after - before), VOLUME_TOL)
+                    bounds = removed.bounding_box()
+                    self.assertAlmostEqual(bounds.size.X, chamfer, delta=LINEAR_TOL)
+                    self.assertAlmostEqual(bounds.size.Z, chamfer, delta=LINEAR_TOL)
+                    self.assertAlmostEqual(bounds.size.Y, r.bottom_length, delta=LINEAR_TOL)
+
     def test_flared_bridge_neck(self):
         cases = [
             (self.default, 3.6528),
@@ -163,11 +202,13 @@ class RiserGeometryTest(unittest.TestCase):
 
     def test_head_and_nut_recess_dimensions(self):
         r = self.default
+        left_bevel, right_bevel = self.assertBottomChamfers((r.left, r.right), r, 1.0)
         for index in r.bolt_slots:
             y = r.bottom_slots[index - 1]
             # M3 socket head + fit: diameter 5.7, depth 3.2.
             head = x_cylinder(2.85, -r.body_width / 2, 3.2, y, r.bolt_z)
             self.assertLess(overlap(r.left, head), VOLUME_TOL)
+            self.assertGreaterEqual(head.distance_to(left_bevel), 1.0 - LINEAR_TOL)
             too_deep = x_cylinder(2.85, -r.body_width / 2, 3.25, y, r.bolt_z)
             self.assertGreater(overlap(r.left, too_deep), 0.1)
             self.assertGreaterEqual(r.bolt_z - 2.85 - r.left.bounding_box().min.Z, 2 - LINEAR_TOL)
@@ -177,6 +218,7 @@ class RiserGeometryTest(unittest.TestCase):
             hex_face = bd.RegularPolygon(5.7 / math.sqrt(3), 6)
             pocket = entry * bd.extrude(hex_face, amount=-2.6)
             self.assertLess(overlap(r.right, pocket), VOLUME_TOL)
+            self.assertGreaterEqual(pocket.distance_to(right_bevel), 1.0 - LINEAR_TOL)
             self.assertGreater(overlap(r.right, entry * bd.extrude(hex_face, amount=-2.65)), 0.1)
 
     def test_parameter_matrix(self):
@@ -193,6 +235,7 @@ class RiserGeometryTest(unittest.TestCase):
                 r = pr.make_riser(**kwargs)
                 self.assertTwoHalves(r)
                 self.assertSlotGeometry((r.left, r.right), r.top_slots, r.riser_height)
+                self.assertBottomChamfers((r.left, r.right), r, 1.0)
                 self.assertAlmostEqual(sum(r.bottom_slots), 0)
                 self.assertAlmostEqual(sum(r.top_slots) / len(r.top_slots), kwargs.get("top_offset", 0))
                 for part in (r.left, r.right):
@@ -227,6 +270,7 @@ class RiserGeometryTest(unittest.TestCase):
             self.assertAlmostEqual(assembly.volume, r.left.volume + r.right.volume, delta=VOLUME_TOL)
             self.assertSlotGeometry(assembly.solids(), r.top_slots, 20)
             self.assertTaperedNeck(assembly.solids(), r, 3.6528)
+            self.assertBottomChamfers(assembly.solids(), r, 1.0)
             for original, path in zip((r.left, r.right), (paths[1], paths[3])):
                 saved = bd.import_step(path)
                 self.assertTrue(saved.is_valid)
@@ -250,11 +294,16 @@ class RiserGeometryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             result = subprocess.run(
                 [sys.executable, str(ROOT / "picatinny_riser.py"), "--bottom-slots", "1",
-                 "--top-slots", "2", "--height", "16", "--output-dir", directory],
+                 "--top-slots", "2", "--height", "16", "--bottom-chamfer", "0.5",
+                 "--output-dir", directory],
                 cwd=directory, capture_output=True, text=True,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue((Path(directory) / "picatinny_riser_right.stl").is_file())
+            saved = bd.import_step(Path(directory) / "picatinny_riser.step")
+            expected = pr.make_riser(bottom_slot_count=1, top_slot_count=2, riser_height=16,
+                                     bottom_chamfer=0.5)
+            self.assertBottomChamfers(saved.solids(), expected, 0.5)
 
     def test_invalid_parameters(self):
         cases = [
@@ -265,6 +314,8 @@ class RiserGeometryTest(unittest.TestCase):
             dict(bolt=bolt_data("M3")), dict(riser_height=5), dict(riser_height=math.nan),
             dict(top_offset=math.inf), dict(top_offset=1000), dict(bolt_fit=-0.1),
             dict(split_gap=0), dict(split_gap=20), dict(min_wall=0), dict(roof_clearance=-1),
+            dict(bottom_chamfer=-0.1), dict(bottom_chamfer=math.nan), dict(bottom_chamfer=math.inf),
+            dict(bottom_chamfer=True), dict(bottom_chamfer=1.01),
             dict(bolt=replace(bolt_data("M3", "socket_head"), head_diameter=12), bolt_slots=(1, 2)),
             dict(bolt=replace(bolt_data("M3", "socket_head"), head_diameter=20),
                  bolt_slots=(3,), riser_height=40),

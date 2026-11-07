@@ -126,6 +126,7 @@ def make_riser(
     split_gap: float = 0.4,
     roof_clearance: float = 0.2,
     min_wall: float = 2.0,
+    bottom_chamfer: float = 1.0,
 ) -> Riser:
     """Build two similar clamp halves with independent top/bottom slot datums.
 
@@ -136,16 +137,20 @@ def make_riser(
     bolt_slots=None selects the first and last bottom slots (once if count=1).
     Empty bolt_slots is allowed for an unfastened mockup. Invalid/duplicate
     slot numbers and geometrically impossible fastener/height choices raise.
+    bottom_chamfer is the equal-leg, 45-degree bevel on the two outside bottom
+    Y edges; zero disables it. Limit it to min_wall/2 to retain pocket edge lips.
     """
     _count(bottom_slot_count, "bottom_slot_count")
     _count(top_slot_count, "top_slot_count")
     for name, value in (("riser_height", riser_height), ("bolt_fit", bolt_fit),
                         ("roof_clearance", roof_clearance), ("min_wall", min_wall),
-                        ("split_gap", split_gap)):
+                        ("split_gap", split_gap), ("bottom_chamfer", bottom_chamfer)):
         _finite(value, name)
     _finite(top_offset, "top_offset", -math.inf)
     if min_wall <= 0 or not 0 < split_gap < NECK_WIDTH - 2 * min_wall:
         raise ValueError("min_wall and split_gap must leave material in both halves")
+    if bottom_chamfer > min_wall / 2:
+        raise ValueError("bottom_chamfer must be <= min_wall/2 to retain the pocket edge lips")
     selected = tuple(sorted({1, bottom_slot_count})) if bolt_slots is None else tuple(bolt_slots)
     if any(isinstance(i, bool) or not isinstance(i, int)
            or not 1 <= i <= bottom_slot_count for i in selected):
@@ -252,6 +257,19 @@ def make_riser(
             replace(hex_nut, width=hex_nut.width + bolt_fit), height_clearance=bolt_fit,
         )
 
+    # Only bevel the longitudinal bottom edges of the outside fastener faces.
+    # Select from the current solid by datums, not topology indices. No end
+    # bevels; the inner dovetail lips, split faces, and fastener seats stay intact.
+    if bottom_chamfer:
+        outer_bottom_edges = [
+            edge for edge in body.edges().filter_by(bd.Axis.Y)
+            if abs(abs(edge.center().X) - width / 2) < 1e-6
+            and abs(edge.center().Z - bottom_z) < 1e-6
+        ]
+        if len(outer_bottom_edges) != 2:
+            raise ValueError("expected two outside bottom Y edges for the chamfer")
+        body = bd.chamfer(outer_bottom_edges, length=bottom_chamfer)
+
     # Remove a real gap rather than coincident faces: bolts can tighten the jaws.
     body -= _box(split_gap, high_y - low_y, bottom_z - min_wall,
                  riser_height + min_wall, (low_y + high_y) / 2)
@@ -293,6 +311,8 @@ def main() -> None:
     parser.add_argument("--top-offset", type=float, default=0.0, help="top center shift along Y, mm")
     parser.add_argument("--bolt-fit", type=float, default=0.2)
     parser.add_argument("--split-gap", type=float, default=0.4)
+    parser.add_argument("--bottom-chamfer", type=float, default=1.0,
+                        help="45-degree outside bottom Y-edge chamfer, mm; 0 disables")
     parser.add_argument("--output-dir", type=Path, default=Path(__file__).resolve().parent)
     parser.add_argument("--show", action="store_true", help="also open in OCP Viewer")
     args = parser.parse_args()
@@ -300,7 +320,7 @@ def main() -> None:
         riser = make_riser(args.bottom_slots, args.top_slots, args.bolt_slots, args.bolt,
                            args.nut or args.bolt, args.height,
                            top_offset=args.top_offset, bolt_fit=args.bolt_fit,
-                           split_gap=args.split_gap)
+                           split_gap=args.split_gap, bottom_chamfer=args.bottom_chamfer)
     except (ValueError, KeyError) as error:
         parser.error(str(error))
     for path in export_riser(riser, args.output_dir):

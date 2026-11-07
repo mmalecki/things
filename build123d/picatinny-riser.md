@@ -3,9 +3,9 @@
 [`picatinny_riser.py`](picatinny_riser.py) builds a female lower clamp, a
 wide-root tapered bridge neck, and a male upper rail as **two longitudinal
 halves**. The pieces differ only at the fastener seats: socket-head counterbores
-on the left, captive
-hex-nut pockets on the right. Fastener cutters and dimensions come from the
-repository's pinned `bd-buildabolt` dependency; there is no second fastener table.
+on the left, captive hex-nut pockets on the right. Fastener cutters and dimensions
+come from the repository's pinned `bd-buildabolt` dependency; there is no second
+fastener table.
 
 ## Build
 
@@ -80,7 +80,8 @@ and Z is up. The lower host rail's top face is **Z=0**. `riser_height` is the
 | `bolt_fit` | `0.2` | Added shaft/head **diameter**, nut **across-flats width**, and head/nut pocket depth |
 | `split_gap` | `0.4` | Material removed between X=-gap/2 and X=+gap/2 |
 | `roof_clearance` | `0.2` | Relief above the lower rail top and clearance below the bolt bore at the host slot floor |
-| `min_wall` | `2.0` | Minimum designed pocket backing/floor, end land, bridge thickness, and adjacent-pocket ligament |
+| `min_wall` | `2.0` | Minimum designed pocket backing/unchamfered floor, end land, bridge thickness, and adjacent-pocket ligament |
+| `bottom_chamfer` | `1.0` | Equal-leg 45° chamfer on the two outer bottom edges along Y; `0` disables it; maximum `min_wall/2` |
 
 Slot 1 is at the negative-Y end. Slot center `i` is
 `(i - (count + 1)/2) * 10.0076`, plus `top_offset` for the top pattern. Top and
@@ -118,6 +119,21 @@ between the lower and upper footprints, including unequal slot counts and
 wider root is intended to distribute load over more of the clamp; stress
 reduction has not been quantified by analysis or physical testing.
 
+## Outer bottom chamfers
+
+Both outside fastener faces have a **1 mm × 45° bottom chamfer** running their
+full length along Y. Only the two outside lower edges are beveled; no end
+chamfers are added. Inner rail-contact lips, split faces and fastener seats stay
+unchanged.
+Use `bottom_chamfer=0.5` in Python or `--bottom-chamfer 0.5` on the CLI for a
+smaller bevel; `0` restores the sharp edges.
+
+The chamfer is limited to `min_wall/2`, retaining at least half the unchamfered
+pocket-floor thickness locally at the outside lip (**1 mm** with the defaults).
+Larger values are rejected rather than silently reduced; if decreasing
+`min_wall`, also decrease `bottom_chamfer`. The remaining unchamfered floor and
+all overall dimensions are unchanged.
+
 ## Rail profile and fit
 
 The existing `picatinny-sling-point.py` informed the clamp and fastener workflow.
@@ -139,8 +155,8 @@ Sources:
 - [Slot dimensions](https://en.wikipedia.org/wiki/Picatinny_rail#Design_and_construction)
 
 These are **nominal modeling dimensions**, not a claim of standard certification.
-Edge breaks, manufacturing tolerances and full GD&T are not reproduced. The
-female dovetail is not deliberately enlarged laterally; its split gap provides
+Standard rail edge breaks, manufacturing tolerances and full GD&T are not
+reproduced. The female dovetail is not deliberately enlarged laterally; its split gap provides
 clamping travel without starting with an oversize interface. Tightening moves
 both halves, so it also changes the upper rail width. Verify the fit on both the
 actual host rail and the accessory; a large clamp correction is not acceptable
@@ -178,7 +194,9 @@ unequal/even/odd counts, offsets of both signs, zero/one/many fasteners, M4 and
 custom hardware, invalid inputs, headless CLI execution, and STEP round trips.
 Bridge sections verify the full-width root, linear narrowing, independently
 interpolated Y ends, absence of the old roof ledge, and unchanged upper neck
-clearance, including checks on the reimported assembly STEP.
+clearance, including checks on the reimported assembly STEP. Chamfer checks
+measure the two 45° faces, equal legs, full Y length, removed triangular-prism
+volumes and remaining pocket lip thickness, including CLI and STEP round trips.
 Print-orientation checks compare the actual split-face area with the face on
 Z=0. Geometric comparisons use 1e-6 mm and 1e-5 mm³ tolerances. These are numerical
 check thresholds, not achievable manufacturing tolerances.
