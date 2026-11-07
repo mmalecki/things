@@ -1,8 +1,9 @@
 # Two-piece Picatinny riser
 
-[`picatinny_riser.py`](picatinny_riser.py) builds a female lower clamp, a tapered
-bridge, and a male upper rail as **two longitudinal halves**. The pieces differ
-only at the fastener seats: socket-head counterbores on the left, captive
+[`picatinny_riser.py`](picatinny_riser.py) builds a female lower clamp, a
+wide-root tapered bridge neck, and a male upper rail as **two longitudinal
+halves**. The pieces differ only at the fastener seats: socket-head counterbores
+on the left, captive
 hex-nut pockets on the right. Fastener cutters and dimensions come from the
 repository's pinned `bd-buildabolt` dependency; there is no second fastener table.
 
@@ -101,6 +102,22 @@ Python API has independent `bolt`/`nut` defaults, so pass both when changing siz
 Custom data has no thread designation: matching thread diameter/pitch remains the
 caller's responsibility. A headless `BoltData` is not accepted for a counterbore.
 
+## Bridge neck
+
+The bridge flares across X to the **full lower clamp width at its root**, then
+narrows linearly to the upper rail's **15.6718 mm neck width**. This removes the
+old narrow web's sharp, re-entrant shoulder on the clamp roof. The root width
+follows the selected fasteners and wall thickness automatically; no extra
+parameter is required. With default parameters it tapers from **31.609 mm** at
+Z=3.6528 to **15.6718 mm** at Z=10.6782.
+
+The taper ends 9.3218 mm below the upper rail top, keeping the upper mounting
+clearance and rail profile unchanged. Its Y length and center interpolate
+between the lower and upper footprints, including unequal slot counts and
+`top_offset`. The 0.4 mm split and both fastener patterns are unchanged. The
+wider root is intended to distribute load over more of the clamp; stress
+reduction has not been quantified by analysis or physical testing.
+
 ## Rail profile and fit
 
 The existing `picatinny-sling-point.py` informed the clamp and fastener workflow.
@@ -159,6 +176,9 @@ separation, nominal host-rail fit, the selected transverse bore axes and unselec
 solid positions, socket/nut recess dimensions, slot pitch/width/depth, height,
 unequal/even/odd counts, offsets of both signs, zero/one/many fasteners, M4 and
 custom hardware, invalid inputs, headless CLI execution, and STEP round trips.
+Bridge sections verify the full-width root, linear narrowing, independently
+interpolated Y ends, absence of the old roof ledge, and unchanged upper neck
+clearance, including checks on the reimported assembly STEP.
 Print-orientation checks compare the actual split-face area with the face on
 Z=0. Geometric comparisons use 1e-6 mm and 1e-5 mm³ tolerances. These are numerical
 check thresholds, not achievable manufacturing tolerances.

@@ -204,17 +204,25 @@ def make_riser(
     if bottom_z < -RAIL_BASE_DEPTH:
         raise ValueError("fastener pockets extend below the host rail mounting clearance")
 
-    # Bottom saddle and a narrow, tapered bridge. The host-rail opening is
-    # cut through the ENTIRE Y envelope, so an offset/long top never blocks it.
+    # Spread the neck across the full saddle width at its root, removing the
+    # former narrow web's re-entrant shoulder. Taper to the standard neck width
+    # below the upper mounting-clearance zone; preserve the independent Y ends.
+    # Matching corner order keeps the ruled loft untwisted for unequal lengths
+    # and shifted top rails. The host opening still spans the entire Y envelope.
     saddle = _box(width, bottom_length, bottom_z, roof_z)
-    bridge_outline = [
-        (-NECK_WIDTH / 2, -bottom_length / 2, roof_z),
-        (-NECK_WIDTH / 2, bottom_length / 2, roof_z),
-        (-NECK_WIDTH / 2, top_offset + top_length / 2, top_base_z),
-        (-NECK_WIDTH / 2, top_offset - top_length / 2, top_base_z),
+    bridge_sections = [
+        bd.Wire.make_polygon([
+            (-section_width / 2, center_y - length / 2, z),
+            (section_width / 2, center_y - length / 2, z),
+            (section_width / 2, center_y + length / 2, z),
+            (-section_width / 2, center_y + length / 2, z),
+        ], close=True)
+        for section_width, length, center_y, z in (
+            (width, bottom_length, 0, roof_z),
+            (NECK_WIDTH, top_length, top_offset, top_base_z),
+        )
     ]
-    bridge = bd.Solid.extrude(bd.Face(bd.Wire.make_polygon(bridge_outline, close=True)),
-                              (NECK_WIDTH, 0, 0))
+    bridge = bd.Solid.make_loft(bridge_sections, ruled=True)
     top = _along_y(rail_profile(riser_height), top_offset - top_length / 2, top_length)
     body = saddle + bridge + top
     low_y = min(-bottom_length / 2, top_offset - top_length / 2) - min_wall

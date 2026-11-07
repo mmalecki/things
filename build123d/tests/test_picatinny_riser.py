@@ -83,6 +83,49 @@ class RiserGeometryTest(unittest.TestCase):
                          and abs(f.normal_at().Z - 1) < LINEAR_TOL]
             self.assertEqual(len(top_faces), len(centers) + 1)
 
+    def assertTaperedNeck(self, shapes, riser, root_z):
+        top_z = riser.riser_height - 9.3218
+        top_center = sum(riser.top_slots) / len(riser.top_slots)
+        shapes = sorted(shapes, key=lambda part: part.center().X)
+        for fraction in (0, 0.1, 0.5, 0.9, 1):
+            z = root_z + fraction * (top_z - root_z)
+            width = riser.body_width + fraction * (15.6718 - riser.body_width)
+            length = riser.bottom_length + fraction * (riser.top_length - riser.bottom_length)
+            center_y = fraction * top_center
+            for side, part in zip((-1, 1), shapes):
+                section = bd.section(part, section_by=bd.Plane.XY.offset(z))
+                self.assertEqual(len(section.faces()), 1)
+                bounds = section.bounding_box()
+                self.assertAlmostEqual(bounds.min.X, -width / 2 if side < 0 else riser.split_gap / 2,
+                                       delta=LINEAR_TOL)
+                self.assertAlmostEqual(bounds.max.X, -riser.split_gap / 2 if side < 0 else width / 2,
+                                       delta=LINEAR_TOL)
+                self.assertAlmostEqual(bounds.min.Y, center_y - length / 2, delta=LINEAR_TOL)
+                self.assertAlmostEqual(bounds.max.Y, center_y + length / 2, delta=LINEAR_TOL)
+                self.assertAlmostEqual(section.area, (width - riser.split_gap) / 2 * length,
+                                       delta=VOLUME_TOL)
+        for part in shapes:
+            # Above the taper, the standard narrow neck must remain unobstructed.
+            neck = bd.section(part, section_by=bd.Plane.XY.offset(top_z + 0.25))
+            self.assertAlmostEqual(neck.bounding_box().size.X, (15.6718 - riser.split_gap) / 2,
+                                   delta=LINEAR_TOL)
+            # No horizontal ledge at the old narrow web's root.
+            ledges = [f for f in part.faces() if abs(f.center().Z - root_z) < LINEAR_TOL
+                      and abs(f.normal_at().Z - 1) < LINEAR_TOL]
+            self.assertEqual(len(ledges), 0)
+
+    def test_flared_bridge_neck(self):
+        cases = [
+            (self.default, 3.6528),
+            (pr.make_riser(bottom_slot_count=5, top_slot_count=3, top_offset=5), 3.6528),
+            (pr.make_riser(bottom_slot_count=1, top_slot_count=1, riser_height=15), 3.6528),
+            (pr.make_riser(bolt="M4", nut="M4", top_offset=-4, riser_height=25), 4.9028),
+        ]
+        for riser, root_z in cases:
+            with self.subTest(height=riser.riser_height, top_slots=riser.top_slots):
+                self.assertTwoHalves(riser)
+                self.assertTaperedNeck((riser.left, riser.right), riser, root_z)
+
     def test_default_geometry_and_nominal_host_fit(self):
         r = self.default
         self.assertTwoHalves(r)
@@ -96,7 +139,7 @@ class RiserGeometryTest(unittest.TestCase):
         for part in (r.left, r.right):
             self.assertLess(overlap(part, host), VOLUME_TOL)
             self.assertLess(part.distance_to(host), LINEAR_TOL)
-        self.assertAlmostEqual(r.left.bounding_box().max.Z, 20)
+        self.assertAlmostEqual(r.left.bounding_box().max.Z, 20, delta=LINEAR_TOL)
         self.assertAlmostEqual(r.body_width, 31.609)
         self.assertAlmostEqual(r.minimum_bolt_length, 28.209)
 
@@ -183,6 +226,7 @@ class RiserGeometryTest(unittest.TestCase):
             self.assertTrue(assembly.is_valid)
             self.assertAlmostEqual(assembly.volume, r.left.volume + r.right.volume, delta=VOLUME_TOL)
             self.assertSlotGeometry(assembly.solids(), r.top_slots, 20)
+            self.assertTaperedNeck(assembly.solids(), r, 3.6528)
             for original, path in zip((r.left, r.right), (paths[1], paths[3])):
                 saved = bd.import_step(path)
                 self.assertTrue(saved.is_valid)
