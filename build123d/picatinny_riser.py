@@ -62,8 +62,7 @@ class Riser:
         parts = []
         for part, angle in ((self.left, 90), (self.right, -90)):
             placed = part.rotate(bd.Axis.Y, angle)
-            bounds = placed.bounding_box()
-            placed = placed.translate((-bounds.min.X, -bounds.min.Y, -bounds.min.Z))
+            placed = placed.translate(-placed.bounding_box().min)
             placed.label = part.label
             parts.append(placed)
         return tuple(parts)
@@ -75,8 +74,23 @@ def _count(value: int, name: str) -> None:
 
 
 def _finite(value: float, name: str, minimum: float = 0.0) -> None:
-    if isinstance(value, bool) or not math.isfinite(value) or value < minimum:
-        raise ValueError(f"{name} must be finite and >= {minimum:g}")
+    if isinstance(value, bool) or not math.isfinite(value):
+        raise ValueError(f"{name} must be finite")
+    if value < minimum:
+        raise ValueError(f"{name} must be >= {minimum:g}")
+
+
+def _bolt_slot_selection(bolt_slots: Iterable[int] | None, count: int) -> tuple[int, ...]:
+    """Ascending 1-based bottom slot numbers; None selects the end slots."""
+    if bolt_slots is None:
+        return tuple(sorted({1, count}))
+    selected = tuple(bolt_slots)
+    if any(isinstance(i, bool) or not isinstance(i, int) or not 1 <= i <= count
+           for i in selected):
+        raise ValueError("bolt_slots must contain 1-based bottom slot numbers")
+    if len(set(selected)) != len(selected):
+        raise ValueError("bolt_slots must not contain duplicates")
+    return tuple(sorted(selected))
 
 
 def slot_centers(count: int, offset: float = 0.0) -> tuple[float, ...]:
@@ -104,13 +118,20 @@ def rail_profile(top_z: float = 0.0, base_z: float | None = None) -> list[tuple[
     return right + [(-x, z) for x, z in reversed(right)]
 
 
-def _along_y(points: list[tuple[float, float]], start: float, length: float) -> bd.Solid:
-    face = bd.Face(bd.Wire.make_polygon([(x, start, z) for x, z in points], close=True))
+def _along_y(points: list[tuple[float, float]], length: float, y: float = 0) -> bd.Solid:
+    face = bd.Face(bd.Wire.make_polygon([(x, y - length / 2, z) for x, z in points], close=True))
     return bd.Solid.extrude(face, (0, length, 0))
 
 
 def _box(width: float, length: float, low: float, high: float, y: float = 0) -> bd.Shape:
     return bd.Pos(0, y, (low + high) / 2) * bd.Box(width, length, high - low)
+
+
+def _rect(width: float, length: float, y: float, z: float) -> bd.Wire:
+    # Every section shares this corner order, so ruled lofts don't twist.
+    corners = ((-1, -1), (1, -1), (1, 1), (-1, 1))
+    return bd.Wire.make_polygon([(sx * width / 2, y + sy * length / 2, z) for sx, sy in corners],
+                                close=True)
 
 
 def make_riser(
@@ -147,17 +168,13 @@ def make_riser(
                         ("split_gap", split_gap), ("bottom_chamfer", bottom_chamfer)):
         _finite(value, name)
     _finite(top_offset, "top_offset", -math.inf)
-    if min_wall <= 0 or not 0 < split_gap < NECK_WIDTH - 2 * min_wall:
-        raise ValueError("min_wall and split_gap must leave material in both halves")
+    if min_wall <= 0:
+        raise ValueError("min_wall must be positive")
+    if not 0 < split_gap < NECK_WIDTH - 2 * min_wall:
+        raise ValueError("split_gap must be positive and leave min_wall in both neck halves")
     if bottom_chamfer > min_wall / 2:
         raise ValueError("bottom_chamfer must be <= min_wall/2 to retain the pocket edge lips")
-    selected = tuple(sorted({1, bottom_slot_count})) if bolt_slots is None else tuple(bolt_slots)
-    if any(isinstance(i, bool) or not isinstance(i, int)
-           or not 1 <= i <= bottom_slot_count for i in selected):
-        raise ValueError("bolt_slots must contain 1-based bottom slot numbers")
-    if len(set(selected)) != len(selected):
-        raise ValueError("bolt_slots must not contain duplicates")
-    selected = tuple(sorted(selected))
+    selected = _bolt_slot_selection(bolt_slots, bottom_slot_count)
     if isinstance(bolt, str) and isinstance(nut, str) and bolt != nut:
         raise ValueError("bolt and nut sizes must match")
     screw = bolt_data(bolt, kind="socket_head")
@@ -177,85 +194,69 @@ def make_riser(
     head_depth = screw.head_length + bolt_fit
     nut_depth = hex_nut.thickness + bolt_fit
     head_radius = (screw.head_diameter + bolt_fit) / 2
-    nut_radius = (hex_nut.width + bolt_fit) / math.sqrt(3)
-    pocket_radius = max(head_radius, nut_radius)
-    if any((b - a) * SLOT_PITCH < 2 * pocket_radius + min_wall
+    fitted_nut = replace(hex_nut, width=hex_nut.width + bolt_fit)
+    # The nut pocket's corners point along Y and its flats face Z.
+    pocket_half_length = max(head_radius, fitted_nut.width / math.sqrt(3))
+    pocket_half_height = max(head_radius, fitted_nut.width / 2)
+    if any((b - a) * SLOT_PITCH < 2 * pocket_half_length + min_wall
            for a, b in zip(selected, selected[1:])):
         raise ValueError("selected bolt pockets leave less than min_wall between them")
 
     bottom_slots = slot_centers(bottom_slot_count)
     top_slots = slot_centers(top_slot_count, top_offset)
     # A half-pitch at either end normally suffices; larger heads grow end lands.
-    end_margin = max(SLOT_PITCH / 2, pocket_radius + min_wall)
+    end_margin = max(SLOT_PITCH / 2, pocket_half_length + min_wall)
     bottom_length = (bottom_slot_count - 1) * SLOT_PITCH + 2 * end_margin
     top_length = top_slot_count * SLOT_PITCH
-    if min(bottom_length / 2, top_offset + top_length / 2) - max(
-        -bottom_length / 2, top_offset - top_length / 2
-    ) < min_wall:
+    footprint_low = min(-bottom_length / 2, top_offset - top_length / 2)
+    footprint_high = max(bottom_length / 2, top_offset + top_length / 2)
+    # Two intervals overlap by their summed lengths minus their combined span.
+    if bottom_length + top_length - (footprint_high - footprint_low) < min_wall:
         raise ValueError("top and bottom footprints must overlap by at least min_wall")
+    # Through-cutters overrun both footprints by min_wall at each end.
+    cut_length = footprint_high - footprint_low + 2 * min_wall
+    cut_y = (footprint_low + footprint_high) / 2
 
     # Shaft bottom clears the host slot floor; it may project above Z=0.
     bolt_z = -SLOT_DEPTH + hole_diameter / 2 + roof_clearance
-    roof_z = max(roof_clearance + min_wall,
-                 bolt_z + head_radius + min_wall,
-                 bolt_z + (hex_nut.width + bolt_fit) / 2 + min_wall)
+    roof_z = max(roof_clearance, bolt_z + pocket_half_height) + min_wall
+    bottom_z = min(-NECK_DEPTH, bolt_z - pocket_half_height - min_wall)
     top_base_z = riser_height - RAIL_BASE_DEPTH
     minimum_height = roof_z + min_wall + RAIL_BASE_DEPTH
     if riser_height < minimum_height:
         raise ValueError(f"riser_height must be >= {minimum_height:.4f} mm for these fasteners")
-    width = RAIL_WIDTH + 2 * (max(head_depth, nut_depth) + min_wall)
-    bottom_z = min(-NECK_DEPTH,
-                   bolt_z - max(head_radius, (hex_nut.width + bolt_fit) / 2) - min_wall)
     if bottom_z < -RAIL_BASE_DEPTH:
         raise ValueError("fastener pockets extend below the host rail mounting clearance")
+    width = RAIL_WIDTH + 2 * (max(head_depth, nut_depth) + min_wall)
 
-    # Spread the neck across the full saddle width at its root, removing the
-    # former narrow web's re-entrant shoulder. Taper to the standard neck width
-    # below the upper mounting-clearance zone; preserve the independent Y ends.
-    # Matching corner order keeps the ruled loft untwisted for unequal lengths
-    # and shifted top rails. The host opening still spans the entire Y envelope.
+    # The bridge flares from the full saddle width at its root to the standard
+    # neck below the upper mounting clearance, interpolating the Y footprints.
     saddle = _box(width, bottom_length, bottom_z, roof_z)
-    bridge_sections = [
-        bd.Wire.make_polygon([
-            (-section_width / 2, center_y - length / 2, z),
-            (section_width / 2, center_y - length / 2, z),
-            (section_width / 2, center_y + length / 2, z),
-            (-section_width / 2, center_y + length / 2, z),
-        ], close=True)
-        for section_width, length, center_y, z in (
-            (width, bottom_length, 0, roof_z),
-            (NECK_WIDTH, top_length, top_offset, top_base_z),
-        )
-    ]
-    bridge = bd.Solid.make_loft(bridge_sections, ruled=True)
-    top = _along_y(rail_profile(riser_height), top_offset - top_length / 2, top_length)
+    bridge = bd.Solid.make_loft([_rect(width, bottom_length, 0, roof_z),
+                                 _rect(NECK_WIDTH, top_length, top_offset, top_base_z)],
+                                ruled=True)
+    top = _along_y(rail_profile(riser_height), top_length, top_offset)
     body = saddle + bridge + top
-    low_y = min(-bottom_length / 2, top_offset - top_length / 2) - min_wall
-    high_y = max(bottom_length / 2, top_offset + top_length / 2) + min_wall
-    host_tool = _along_y(rail_profile(base_z=bottom_z - min_wall), low_y, high_y - low_y)
+    host_tool = _along_y(rail_profile(base_z=bottom_z - min_wall), cut_length, cut_y)
     # Relief above host top face, not a scaled/oversized dovetail.
     if roof_clearance:
-        host_tool += _box(TOP_WIDTH, high_y - low_y, -roof_clearance, roof_clearance,
-                          (low_y + high_y) / 2)
+        host_tool += _box(TOP_WIDTH, cut_length, -roof_clearance, roof_clearance, cut_y)
     body -= host_tool
     for y in top_slots:
         body -= _box(RAIL_WIDTH + 2 * min_wall, SLOT_WIDTH,
                      riser_height - SLOT_DEPTH, riser_height + min_wall, y)
 
-    # bd-buildabolt primitives cut along each entry plane's local -Z.
+    # bd-buildabolt primitives cut along each entry plane's local -Z, so each
+    # side's plane faces outward: socket heads enter at -X, nuts at +X.
+    socket = CounterBoreBoltHole(screw, depth=width, clearance=bolt_fit, head_clearance=0,
+                                 counter_bore_depth=head_depth)
+    nut_pocket = NutcatchParallel(fitted_nut, height_clearance=bolt_fit)
     for number in selected:
         y = bottom_slots[number - 1]
-        left_entry = bd.Plane(origin=(-width / 2, y, bolt_z),
-                              x_dir=(0, 1, 0), z_dir=(-1, 0, 0))
-        right_entry = bd.Plane(origin=(width / 2, y, bolt_z),
-                               x_dir=(0, 1, 0), z_dir=(1, 0, 0))
-        body -= left_entry * CounterBoreBoltHole(
-            screw, depth=width, clearance=bolt_fit, head_clearance=0,
-            counter_bore_depth=head_depth,
-        )
-        body -= right_entry * NutcatchParallel(
-            replace(hex_nut, width=hex_nut.width + bolt_fit), height_clearance=bolt_fit,
-        )
+        for side, cutter in ((-1, socket), (1, nut_pocket)):
+            entry = bd.Plane(origin=(side * width / 2, y, bolt_z),
+                             x_dir=(0, 1, 0), z_dir=(side, 0, 0))
+            body -= entry * cutter
 
     # Only bevel the longitudinal bottom edges of the outside fastener faces.
     # Select from the current solid by datums, not topology indices. No end
@@ -271,17 +272,21 @@ def make_riser(
         body = bd.chamfer(outer_bottom_edges, length=bottom_chamfer)
 
     # Remove a real gap rather than coincident faces: bolts can tighten the jaws.
-    body -= _box(split_gap, high_y - low_y, bottom_z - min_wall,
-                 riser_height + min_wall, (low_y + high_y) / 2)
+    body -= _box(split_gap, cut_length, bottom_z - min_wall, riser_height + min_wall, cut_y)
     solids = sorted(body.solids(), key=lambda solid: solid.center().X)
     if len(solids) != 2 or any(not solid.is_valid or solid.volume <= 0 for solid in solids):
         raise ValueError("parameters did not produce two connected, valid clamp halves")
     left, right = solids
     left.label, right.label = "left_socket_half", "right_nut_half"
     left.color, right.color = bd.Color(0.35, 0.45, 0.55), bd.Color(0.6, 0.65, 0.7)
-    return Riser(left, right, bottom_slots, top_slots, selected, bolt_z,
-                 bottom_length, top_length, width, riser_height, split_gap,
-                 width - head_depth - bolt_fit)
+    return Riser(
+        left=left, right=right, bottom_slots=bottom_slots, top_slots=top_slots,
+        bolt_slots=selected, bolt_z=bolt_z, bottom_length=bottom_length,
+        top_length=top_length, body_width=width, riser_height=riser_height,
+        split_gap=split_gap,
+        # The nut seats on its pocket floor, bolt_fit inside the outer face.
+        minimum_bolt_length=width - head_depth - bolt_fit,
+    )
 
 
 def export_riser(riser: Riser, directory: str | Path) -> tuple[Path, ...]:
