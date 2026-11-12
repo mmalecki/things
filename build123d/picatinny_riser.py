@@ -44,8 +44,8 @@ class PrintSupport:
     """Detached wall under each lower jaw lip of the split-face-down halves.
 
     The lip starts as a sub-millimetre island in that orientation, which
-    slicers don't support. wall is the thickness from the clamp bottom face
-    toward the rail; gap is the empty separation under the lip, normally one
+    slicers don't support. wall is the thickness across the lip's lowest edge,
+    centered under it; gap is the empty separation under the lip, normally one
     layer height. brim > 0 adds a brim_height thick rectangle that wide around
     the wall on the bed; on the rail side it stops SUPPORT_BRIM_CLEARANCE short
     of the half.
@@ -85,7 +85,7 @@ class Riser:
         """Lay each flat split face on Z=0 without changing the fitted geometry.
 
         With support, each half becomes a compound of the half and its wall,
-        moved together so a brim also starts at the origin.
+        moved together so a support reaching past the half starts at the origin too.
         """
         if support is not None:
             for name, value in (("support wall", support.wall), ("support gap", support.gap),
@@ -93,7 +93,8 @@ class Riser:
                                 ("support brim height", support.brim_height)):
                 _finite(value, name)
             # Past the lower jaw the wall would run toward the bed-touching roof.
-            if not 0 < support.wall <= -LOWER_CORNER_DEPTH - self.bottom_z:
+            lip_z = (self.bottom_z - NECK_DEPTH) / 2
+            if not 0 < support.wall <= 2 * (-LOWER_CORNER_DEPTH - lip_z):
                 raise ValueError("support wall must be positive and stay under the lower jaw")
             if not 0 < support.gap < (NECK_WIDTH - self.split_gap) / 2:
                 raise ValueError("support gap must be positive and below the lower jaw lip")
@@ -116,16 +117,18 @@ class Riser:
 
     def _support(self, side: int, support: PrintSupport) -> bd.Shape:
         """One half's support wall, plus any brim, in assembly coordinates."""
-        # The lip's lowest points are on the neck plane; a flat top keeps
-        # the wall out of every layer the 45-degree flank prints in.
+        # The lip's lowest edge is its neck land, from the clamp bottom up to
+        # the neck depth (a knife edge if they meet); center the wall on it. A
+        # flat top keeps the wall out of every layer the 45-degree flank prints in.
         inner, outer = self.split_gap / 2, NECK_WIDTH / 2 - support.gap
+        lip_z = (self.bottom_z - NECK_DEPTH) / 2
+        low, high = lip_z - support.wall / 2, lip_z + support.wall / 2
         wall = bd.Pos(side * (inner + outer) / 2, 0, 0) * _box(
-            outer - inner, self.bottom_length, self.bottom_z, self.bottom_z + support.wall)
+            outer - inner, self.bottom_length, low, high)
         if support.brim:
             # The half meets the bed at the roof, above its host-rail relief.
-            low = self.bottom_z - support.brim
-            high = min(self.bottom_z + support.wall + support.brim,
-                       self.roof_clearance - SUPPORT_BRIM_CLEARANCE)
+            low -= support.brim
+            high = min(high + support.brim, self.roof_clearance - SUPPORT_BRIM_CLEARANCE)
             wall += bd.Pos(side * (inner + support.brim_height / 2), 0, 0) * _box(
                 support.brim_height, self.bottom_length + 2 * support.brim, low, high)
         return wall
@@ -390,7 +393,8 @@ def main() -> None:
                         help="add a detached support wall under each half's lower jaw lip "
                              "to the print exports")
     parser.add_argument("--support-wall", type=float, default=PrintSupport.wall,
-                        help="support thickness from the clamp bottom face toward the rail, mm")
+                        help="support wall thickness, centered under the lower jaw lip's "
+                             "lowest edge, mm")
     parser.add_argument("--support-gap", type=float, default=PrintSupport.gap,
                         help="empty separation under the lip, mm; use one layer height")
     parser.add_argument("--support-brim", type=float, nargs="?", const=5.0,

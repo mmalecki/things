@@ -298,50 +298,56 @@ class RiserGeometryTest(unittest.TestCase):
         for side, part, bare in zip((-1, 1), parts, unsupported):
             self.assertEqual(len(part.solids()), 2)
             # The support is the smaller solid; the half lands as unsupported,
-            # moved only as far as a brim needs to keep the pair at the origin.
+            # moved only to keep a support reaching past it at the origin too.
             wall, half = sorted(part.solids(), key=lambda solid: solid.volume)
             bounds, half_bounds = wall.bounding_box(), half.bounding_box()
             for axis in "XYZ":
                 self.assertAlmostEqual(min(getattr(bounds.min, axis), getattr(half_bounds.min, axis)),
                                        0, delta=LINEAR_TOL)
-            shift = half_bounds.min - bare.bounding_box().min
-            if not support.brim:
-                self.assertAlmostEqual(shift.length, 0, delta=LINEAR_TOL)
-            moved = bare.translate(shift)
+            moved = bare.translate(half_bounds.min - bare.bounding_box().min)
             self.assertLess(volume(half - moved), VOLUME_TOL)
             self.assertLess(volume(moved - half), VOLUME_TOL)
             self.assertAlmostEqual(bounds.min.Z, 0, delta=LINEAR_TOL)
             self.assertAlmostEqual(bounds.size.Z, height, delta=LINEAR_TOL)
-            # The wall's top is flush with the clamp bottom face and spans the saddle.
-            bottom = [f for f in half.faces() if abs(f.normal_at().X - side) < LINEAR_TOL
-                      and abs(f.center().X - (half_bounds.min.X if side < 0 else half_bounds.max.X))
-                      < LINEAR_TOL]
-            self.assertEqual(len(bottom), 1)
-            jaw = bottom[0].bounding_box()
+            # The lip's lowest edges: the Y-running edges on the neck plane within
+            # the lower jaw, at its clamp bottom face. Two bound a land; one is a
+            # knife edge.
+            jaw_x = half_bounds.min.X if side < 0 else half_bounds.max.X
+            lip = [e for e in half.edges() if e.geom_type == bd.GeomType.LINE
+                   and abs(abs(e.tangent_at().Y) - 1) < LINEAR_TOL
+                   and abs(e.center().Z - (15.6718 - riser.split_gap) / 2) < LINEAR_TOL
+                   and abs(e.center().X - jaw_x) < 3]
+            lip_x = sorted({round(e.center().X, 9) for e in lip})
+            self.assertIn(len(lip_x), (1, 2))
+            self.assertAlmostEqual(lip_x[0] if side < 0 else lip_x[-1], jaw_x, delta=LINEAR_TOL)
+            lip_low = min(e.bounding_box().min.Y for e in lip)
+            lip_high = max(e.bounding_box().max.Y for e in lip)
+            # The wall's top is centered under them and spans the saddle.
             tops = [f for f in wall.faces() if abs(f.center().Z - height) < LINEAR_TOL]
             self.assertEqual(len(tops), 1)
             top = tops[0].bounding_box()
             self.assertAlmostEqual(top.size.X, support.wall, delta=LINEAR_TOL)
-            self.assertAlmostEqual(top.min.X if side < 0 else top.max.X, jaw.min.X,
-                                   delta=LINEAR_TOL)
-            self.assertAlmostEqual(top.min.Y, jaw.min.Y, delta=LINEAR_TOL)
-            self.assertAlmostEqual(top.max.Y, jaw.max.Y, delta=LINEAR_TOL)
+            self.assertAlmostEqual(top.center().X, (lip_x[0] + lip_x[-1]) / 2, delta=LINEAR_TOL)
+            self.assertAlmostEqual(top.min.Y, lip_low, delta=LINEAR_TOL)
+            self.assertAlmostEqual(top.max.Y, lip_high, delta=LINEAR_TOL)
+            self.assertAlmostEqual(lip_high - lip_low, riser.bottom_length, delta=LINEAR_TOL)
             # Bed footprint: the wall alone, or a rectangle brim wide around it,
             # except that the rail side stops 1 mm short of the half.
             beds = [f for f in wall.faces() if abs(f.center().Z) < LINEAR_TOL]
             self.assertEqual(len(beds), 1)
             bed = beds[0].bounding_box()
             self.assertAlmostEqual(beds[0].area, bed.size.X * bed.size.Y, delta=VOLUME_TOL)
-            outward = jaw.min.X - bed.min.X if side < 0 else bed.max.X - jaw.min.X
-            inward = bed.max.X - jaw.min.X if side < 0 else jaw.min.X - bed.min.X
+            outward, inward = top.min.X - bed.min.X, bed.max.X - top.max.X
+            if side > 0:
+                outward, inward = inward, outward
             self.assertAlmostEqual(outward, support.brim, delta=LINEAR_TOL)
-            self.assertAlmostEqual(bed.min.Y, jaw.min.Y - support.brim, delta=LINEAR_TOL)
-            self.assertAlmostEqual(bed.max.Y, jaw.max.Y + support.brim, delta=LINEAR_TOL)
+            self.assertAlmostEqual(bed.min.Y, top.min.Y - support.brim, delta=LINEAR_TOL)
+            self.assertAlmostEqual(bed.max.Y, top.max.Y + support.brim, delta=LINEAR_TOL)
             clearance = beds[0].distance_to(half)
-            if inward < support.wall + support.brim - LINEAR_TOL:
+            if inward < support.brim - LINEAR_TOL:
                 self.assertAlmostEqual(clearance, 1.0, delta=LINEAR_TOL)
             else:
-                self.assertAlmostEqual(inward, support.wall + support.brim, delta=LINEAR_TOL)
+                self.assertAlmostEqual(inward, support.brim, delta=LINEAR_TOL)
                 self.assertGreater(clearance, 1.0)
             self.assertAlmostEqual(
                 wall.volume, beds[0].area * brim_height
@@ -363,7 +369,10 @@ class RiserGeometryTest(unittest.TestCase):
              pr.PrintSupport(wall=0.8, gap=0.3, brim=2, brim_height=0.3)),
             # A saddle longer than the top rail: the brim also moves the pair along Y.
             (pr.make_riser(bottom_slot_count=8, top_slot_count=3), pr.PrintSupport(brim=4)),
+            # Thinner pocket floors end the jaw at the neck depth: a knife-edge lip.
+            (pr.make_riser(min_wall=1.5, bottom_chamfer=0.5), pr.PrintSupport(wall=1.2, brim=3)),
         ]
+        self.assertAlmostEqual(cases[-1][0].bottom_z, -5.8293, delta=LINEAR_TOL)
         for riser, support in cases:
             with self.subTest(support=support, split_gap=riser.split_gap):
                 parts = riser.print_parts(support)
@@ -423,10 +432,13 @@ class RiserGeometryTest(unittest.TestCase):
 
     def test_invalid_print_support(self):
         r = self.default
-        # The default lower jaw is 6.0472 - 3.0607 = 2.9865 mm deep along the wall.
+        # Centered on the default lip's land, mid-way between Z=-6.0472 and
+        # -5.8293, the wall's rail side reaches the lower jaw's corner at
+        # Z=-3.0607 when 2 * (5.93825 - 3.0607) = 5.7551 mm thick.
+        self.assertEqual(len(r.print_parts(pr.PrintSupport(wall=5.75))[0].solids()), 2)
         cases = [
             dict(wall=0), dict(wall=-1), dict(wall=math.nan), dict(wall=math.inf), dict(wall=True),
-            dict(wall=2.99), dict(gap=0), dict(gap=-0.1), dict(gap=math.nan), dict(gap=True),
+            dict(wall=5.76), dict(gap=0), dict(gap=-0.1), dict(gap=math.nan), dict(gap=True),
             dict(gap=(15.6718 - r.split_gap) / 2), dict(brim=-1), dict(brim=math.inf),
             dict(brim=True), dict(brim_height=math.nan), dict(brim=2, brim_height=0),
             dict(brim=2, brim_height=-0.1), dict(brim=2, brim_height=(15.6718 - r.split_gap) / 2 - 0.19),

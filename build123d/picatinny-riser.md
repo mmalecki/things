@@ -154,19 +154,22 @@ exports only; the assembly STEP and the fitted halves are unchanged.
 
 | `PrintSupport` field | CLI option | Default | Meaning |
 | --- | --- | --- | --- |
-| `wall` | `--support-wall` | `1.0` | Wall thickness, measured from the clamp bottom face (flush with it) toward the rail |
+| `wall` | `--support-wall` | `1.0` | Wall thickness across the lip, centered under its lowest edge |
 | `gap` | `--support-gap` | `0.2` | Empty separation between the wall top and the lip's lowest edge |
 | `brim` | `--support-brim [MM]` | `0` (CLI flag alone: `5`) | Width of a rectangular brim around the wall on the bed; `0` disables it |
 | `brim_height` | `--support-brim-height` | `0.2` | Brim thickness; must stay below the wall top |
 
-The wall stands on the bed and runs the full saddle length. Its top is flat, one
-gap below the lip's lowest edge. A top following the 45° flank would sit only
-one gap away sideways in the layers the flank prints in, and slicers fuse
-perimeters that close. Set `gap` to your layer height for a single empty
-separation layer, then confirm that layer in the slicer preview: the lip edge
-need not fall on a layer boundary. `wall` must be positive and keep the wall
-under the lower jaw (at most 2.9865 mm with default hardware); `gap` must be
-positive and leave the wall some height. Both files then contain two bodies:
+The wall stands on the bed and runs the full saddle length, centered under the
+middle of the neck land (or the knife edge). A wall wider than the land
+therefore overhangs it equally: past the clamp bottom face on one side, under
+the 45° flank on the other. Its top is flat, one gap below the lip's lowest
+edge. A top following the 45° flank would sit only one gap away sideways in the
+layers the flank prints in, and slicers fuse perimeters that close. Set `gap` to
+your layer height for a single empty separation layer, then confirm that layer
+in the slicer preview: the lip edge need not fall on a layer boundary. `wall`
+must be positive and keep the wall's rail side under the lower jaw (at most
+5.7551 mm with default hardware); `gap` must be positive and leave the wall
+some height. Both files then contain two bodies:
 keep them as one object on the bed and don't let the slicer generate support
 there as well. Snap the wall off after printing.
 
@@ -175,9 +178,10 @@ flat rectangle around its base, part of the same support body. It extends the
 full width outward and past both saddle ends. On the rail side the half itself
 meets the bed, so the brim stops `SUPPORT_BRIM_CLEARANCE` (1 mm) short of it so
 slicers don't merge the two. With default hardware and wall that allows up to
-4.2472 mm there; wider brims are clipped on that side only. Each half and its
-support are moved together so the file still starts at X=Y=Z=0. `--support-brim`
-on its own enables the support with a 5 mm brim.
+4.6383 mm there; wider brims are clipped on that side only. Since a wall wider
+than the land or a brim reaches past the half, each half and its support are
+moved together so the file still starts at X=Y=Z=0. `--support-brim` on its own
+enables the support with a 5 mm brim.
 
 ## Rail profile and fit
 
@@ -244,10 +248,12 @@ clearance, including checks on the reimported assembly STEP. Chamfer checks
 measure the two 45° faces, equal legs, full Y length, removed triangular-prism
 volumes and remaining pocket lip thickness, including CLI and STEP round trips.
 Print-orientation checks compare the actual split-face area with the face on
-Z=0. Support checks confirm the halves land as without support (shifted only as a
-brim requires, keeping each file at the origin) and measure each wall's volume,
-bed contact, flush bottom face, saddle length, and exact gap to the lip, which it
-sits directly beneath. Brim checks measure its footprint on every side, its exact
-1 mm clearance to the half where clipped, and its thickness through the volume.
-They cover CLI and STEP round trips and rejected values. Geometric comparisons use 1e-6 mm and 1e-5 mm³ tolerances. These are numerical
-check thresholds, not achievable manufacturing tolerances.
+Z=0. Support checks confirm the halves land as without support (shifted only to
+keep each file at the origin) and measure each wall's volume, bed contact,
+saddle length, and exact gap to the lip, which it sits directly beneath. They
+find the lip's lowest edges independently and check the wall is centered on
+them, for both a land and a knife-edge lip. Brim checks measure its footprint
+on every side, its exact 1 mm clearance to the half where clipped, and its
+thickness through the volume. They cover CLI and STEP round trips and rejected
+values. Geometric comparisons use 1e-6 mm and 1e-5 mm³ tolerances. These are
+numerical check thresholds, not achievable manufacturing tolerances.
