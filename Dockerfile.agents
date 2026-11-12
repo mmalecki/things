@@ -12,7 +12,7 @@ RUN apt install -y --no-install-recommends \
     build-essential python3 python3-pip python3-venv \
     openssh-client netcat-openbsd gnupg uidmap slirp4netns iproute2 \
     dbus-bin libnotify-bin libsecret-tools \
-    libgl1 libx11-6 \
+    libgl1 libgl1-mesa-dri libx11-6 xvfb \
     libnspr4 libnss3 libatk1.0-0 libatk-bridge2.0-0 libatspi2.0-0 \
     libxcomposite1 libxdamage1 libxrandr2 libgbm1 libxkbcommon0 \
     libasound2 fontconfig \
@@ -32,7 +32,7 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_DOWNLOADS=manual \
     UV_PYTHON_INSTALL_DIR=/opt/uv/python
 
-# The text-to-cad skill runs cadgen on a uv-managed Python 3.13.
+# text-to-cad's cad server runs on a uv-managed Python 3.13.
 RUN uv python install --no-bin 3.13
 
 ARG WORK_UID=1000
@@ -43,5 +43,14 @@ USER work:work
 RUN npm config set prefix "$HOME/.npm"
 RUN npm install -g @anthropic-ai/claude-code @opencode/cli @openai/codex
 RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent
-ENV PATH="/home/work/.npm/bin:$PATH"
+
+# text-to-cad's cad command. `cad doctor` registers the server and writes ~/.local/bin/cad; the
+# texttocad.dev install script's `cad setup` would also add plugins and skills to every agent app.
+# Automatic updates rerun that setup, so they are off. Snapshots render on an Xvfb the engine starts.
+ARG CAD_SERVER_VERSION=0.11.9
+ENV CAD_UPDATE_CHECK=0 \
+    CAD_TELEMETRY=0
+RUN uvx --no-config --managed-python --python 3.13 --from "cad-server==$CAD_SERVER_VERSION" \
+    cad doctor --no-server
+ENV PATH="/home/work/.local/bin:/home/work/.npm/bin:$PATH"
 ENTRYPOINT ["bash"]
