@@ -144,7 +144,7 @@ def make_riser(
     *,
     top_offset: float = 0.0,
     bolt_fit: float = 0.2,
-    split_gap: float = 0.4,
+    split_gap: float = 0.1,
     roof_clearance: float = 0.2,
     min_wall: float = 2.0,
     bottom_chamfer: float = 1.0,
@@ -315,7 +315,7 @@ def main() -> None:
     parser.add_argument("--height", type=float, default=20.0, help="rail top-to-top rise in mm")
     parser.add_argument("--top-offset", type=float, default=0.0, help="top center shift along Y, mm")
     parser.add_argument("--bolt-fit", type=float, default=0.2)
-    parser.add_argument("--split-gap", type=float, default=0.2)
+    parser.add_argument("--split-gap", type=float, default=0.1)
     parser.add_argument("--bottom-chamfer", type=float, default=1.0,
                         help="45-degree outside bottom Y-edge chamfer, mm; 0 disables")
     parser.add_argument("--output-dir", type=Path, default=Path(__file__).resolve().parent)
