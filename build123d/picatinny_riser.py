@@ -35,17 +35,26 @@ LOWER_CORNER_DEPTH = LOWER_CONTACT_DEPTH - (RAIL_WIDTH - CONTACT_WIDTH) / 2
 NECK_DEPTH = LOWER_CONTACT_DEPTH + (CONTACT_WIDTH - NECK_WIDTH) / 2
 
 
+# Bed spacing between a support brim and its half, so slicers don't merge them.
+SUPPORT_BRIM_CLEARANCE = 1.0
+
+
 @dataclass(frozen=True)
 class PrintSupport:
     """Detached wall under each lower jaw lip of the split-face-down halves.
 
     The lip starts as a sub-millimetre island in that orientation, which
-    slicers don't support. wall is the thickness from the clamp bottom face toward the
-    rail; gap is the empty separation under the lip, normally one layer height.
+    slicers don't support. wall is the thickness from the clamp bottom face
+    toward the rail; gap is the empty separation under the lip, normally one
+    layer height. brim > 0 adds a brim_height thick rectangle that wide around
+    the wall on the bed; on the rail side it stops SUPPORT_BRIM_CLEARANCE short
+    of the half.
     """
 
     wall: float = 1.0
     gap: float = 0.2
+    brim: float = 0.0
+    brim_height: float = 0.2
 
 
 @dataclass(frozen=True)
@@ -64,6 +73,7 @@ class Riser:
     body_width: float
     riser_height: float
     split_gap: float
+    roof_clearance: float
     minimum_bolt_length: float
 
     def assembly(self) -> bd.Compound:
@@ -74,34 +84,51 @@ class Riser:
     def print_parts(self, support: PrintSupport | None = None) -> tuple[bd.Shape, bd.Shape]:
         """Lay each flat split face on Z=0 without changing the fitted geometry.
 
-        With support, each half becomes a compound of the half and its wall.
+        With support, each half becomes a compound of the half and its wall,
+        moved together so a brim also starts at the origin.
         """
         if support is not None:
-            _finite(support.wall, "support wall")
-            _finite(support.gap, "support gap")
+            for name, value in (("support wall", support.wall), ("support gap", support.gap),
+                                ("support brim", support.brim),
+                                ("support brim height", support.brim_height)):
+                _finite(value, name)
             # Past the lower jaw the wall would run toward the bed-touching roof.
             if not 0 < support.wall <= -LOWER_CORNER_DEPTH - self.bottom_z:
                 raise ValueError("support wall must be positive and stay under the lower jaw")
             if not 0 < support.gap < (NECK_WIDTH - self.split_gap) / 2:
                 raise ValueError("support gap must be positive and below the lower jaw lip")
+            wall_height = (NECK_WIDTH - self.split_gap) / 2 - support.gap
+            if support.brim and not 0 < support.brim_height < wall_height:
+                raise ValueError("support brim height must be positive and below the wall top")
         parts = []
         for part, angle, side in ((self.left, 90, -1), (self.right, -90, 1)):
-            placed = part.rotate(bd.Axis.Y, angle)
-            offset = -placed.bounding_box().min
-            placed = placed.translate(offset)
+            pieces = [part] if support is None else [part, self._support(side, support)]
+            pieces = [piece.rotate(bd.Axis.Y, angle) for piece in pieces]
+            offset = -bd.Compound(pieces).bounding_box().min
+            placed, *wall = [piece.translate(offset) for piece in pieces]
             placed.label = part.label
-            if support is not None:
-                # The lip's lowest points are on the neck plane; a flat top keeps
-                # the wall out of every layer the 45-degree flank prints in.
-                inner, outer = self.split_gap / 2, NECK_WIDTH / 2 - support.gap
-                wall = (bd.Pos(side * (inner + outer) / 2, 0, self.bottom_z + support.wall / 2)
-                        * bd.Box(outer - inner, self.bottom_length, support.wall))
-                wall = wall.rotate(bd.Axis.Y, angle).translate(offset)
-                wall.label = f"{part.label}_support"
-                wall.color = bd.Color(0.9, 0.55, 0.2)
-                placed = bd.Compound(children=[placed, wall], label=part.label)
+            if wall:
+                wall[0].label = f"{part.label}_support"
+                wall[0].color = bd.Color(0.9, 0.55, 0.2)
+                placed = bd.Compound(children=[placed, *wall], label=part.label)
             parts.append(placed)
         return tuple(parts)
+
+    def _support(self, side: int, support: PrintSupport) -> bd.Shape:
+        """One half's support wall, plus any brim, in assembly coordinates."""
+        # The lip's lowest points are on the neck plane; a flat top keeps
+        # the wall out of every layer the 45-degree flank prints in.
+        inner, outer = self.split_gap / 2, NECK_WIDTH / 2 - support.gap
+        wall = bd.Pos(side * (inner + outer) / 2, 0, 0) * _box(
+            outer - inner, self.bottom_length, self.bottom_z, self.bottom_z + support.wall)
+        if support.brim:
+            # The half meets the bed at the roof, above its host-rail relief.
+            low = self.bottom_z - support.brim
+            high = min(self.bottom_z + support.wall + support.brim,
+                       self.roof_clearance - SUPPORT_BRIM_CLEARANCE)
+            wall += bd.Pos(side * (inner + support.brim_height / 2), 0, 0) * _box(
+                support.brim_height, self.bottom_length + 2 * support.brim, low, high)
+        return wall
 
 
 def _count(value: int, name: str) -> None:
@@ -319,7 +346,7 @@ def make_riser(
         left=left, right=right, bottom_slots=bottom_slots, top_slots=top_slots,
         bolt_slots=selected, bolt_z=bolt_z, bottom_z=bottom_z, bottom_length=bottom_length,
         top_length=top_length, body_width=width, riser_height=riser_height,
-        split_gap=split_gap,
+        split_gap=split_gap, roof_clearance=roof_clearance,
         # The nut seats on its pocket floor, bolt_fit inside the outer face.
         minimum_bolt_length=width - head_depth - bolt_fit,
     )
@@ -366,10 +393,18 @@ def main() -> None:
                         help="support thickness from the clamp bottom face toward the rail, mm")
     parser.add_argument("--support-gap", type=float, default=PrintSupport.gap,
                         help="empty separation under the lip, mm; use one layer height")
+    parser.add_argument("--support-brim", type=float, nargs="?", const=5.0,
+                        default=PrintSupport.brim, metavar="MM",
+                        help="brim width around each support wall on the bed, mm "
+                             "(5 without a value); implies --support")
+    parser.add_argument("--support-brim-height", type=float, default=PrintSupport.brim_height,
+                        help="support brim thickness, mm")
     parser.add_argument("--output-dir", type=Path, default=Path(__file__).resolve().parent)
     parser.add_argument("--show", action="store_true", help="also open in OCP Viewer")
     args = parser.parse_args()
-    support = PrintSupport(args.support_wall, args.support_gap) if args.support else None
+    support = (PrintSupport(args.support_wall, args.support_gap, args.support_brim,
+                            args.support_brim_height)
+               if args.support or args.support_brim else None)
     try:
         riser = make_riser(args.bottom_slots, args.top_slots, args.bolt_slots, args.bolt,
                            args.nut or args.bolt, args.height,

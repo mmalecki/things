@@ -26,6 +26,9 @@ uv run python picatinny_riser.py --bottom-slots 5 --top-slots 3 \
 
 # Print exports with a support wall under each lower jaw lip:
 uv run python picatinny_riser.py --support --support-wall 1.2 --support-gap 0.2
+
+# The same walls with a 5 mm brim on the bed (--support-brim implies --support):
+uv run python picatinny_riser.py --support-brim --support-wall 1.2
 ```
 
 Exports (ignored by Git, following this repository's artifact policy):
@@ -63,7 +66,7 @@ riser = make_riser(
 )
 left, right = riser.left, riser.right        # assembly coordinates
 print_left, print_right = riser.print_parts()
-supported_left, supported_right = riser.print_parts(PrintSupport(wall=1.2, gap=0.2))
+supported_left, supported_right = riser.print_parts(PrintSupport(wall=1.2, gap=0.2, brim=5))
 assembly = riser.assembly()
 export_riser(riser, "/tmp/picatinny-riser-custom")
 export_riser(riser, "/tmp/picatinny-riser-supported", support=PrintSupport())
@@ -153,6 +156,8 @@ exports only; the assembly STEP and the fitted halves are unchanged.
 | --- | --- | --- | --- |
 | `wall` | `--support-wall` | `1.0` | Wall thickness, measured from the clamp bottom face (flush with it) toward the rail |
 | `gap` | `--support-gap` | `0.2` | Empty separation between the wall top and the lip's lowest edge |
+| `brim` | `--support-brim [MM]` | `0` (CLI flag alone: `5`) | Width of a rectangular brim around the wall on the bed; `0` disables it |
+| `brim_height` | `--support-brim-height` | `0.2` | Brim thickness; must stay below the wall top |
 
 The wall stands on the bed and runs the full saddle length. Its top is flat, one
 gap below the lip's lowest edge. A top following the 45° flank would sit only
@@ -164,6 +169,15 @@ under the lower jaw (at most 2.9865 mm with default hardware); `gap` must be
 positive and leave the wall some height. Both files then contain two bodies:
 keep them as one object on the bed and don't let the slicer generate support
 there as well. Snap the wall off after printing.
+
+A tall, 1 mm wall standing alone on the bed can peel or tip, so `brim` adds a
+flat rectangle around its base, part of the same support body. It extends the
+full width outward and past both saddle ends. On the rail side the half itself
+meets the bed, so the brim stops `SUPPORT_BRIM_CLEARANCE` (1 mm) short of it so
+slicers don't merge the two. With default hardware and wall that allows up to
+4.2472 mm there; wider brims are clipped on that side only. Each half and its
+support are moved together so the file still starts at X=Y=Z=0. `--support-brim`
+on its own enables the support with a 5 mm brim.
 
 ## Rail profile and fit
 
@@ -230,8 +244,10 @@ clearance, including checks on the reimported assembly STEP. Chamfer checks
 measure the two 45° faces, equal legs, full Y length, removed triangular-prism
 volumes and remaining pocket lip thickness, including CLI and STEP round trips.
 Print-orientation checks compare the actual split-face area with the face on
-Z=0. Support checks confirm the halves land as without support and measure each
-wall's volume, bed contact, flush bottom face, saddle length, and exact gap to
-the lip, which it sits directly beneath; they cover CLI and STEP round trips and
-rejected thicknesses and gaps. Geometric comparisons use 1e-6 mm and 1e-5 mm³ tolerances. These are numerical
+Z=0. Support checks confirm the halves land as without support (shifted only as a
+brim requires, keeping each file at the origin) and measure each wall's volume,
+bed contact, flush bottom face, saddle length, and exact gap to the lip, which it
+sits directly beneath. Brim checks measure its footprint on every side, its exact
+1 mm clearance to the half where clipped, and its thickness through the volume.
+They cover CLI and STEP round trips and rejected values. Geometric comparisons use 1e-6 mm and 1e-5 mm³ tolerances. These are numerical
 check thresholds, not achievable manufacturing tolerances.

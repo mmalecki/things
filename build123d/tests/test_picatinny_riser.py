@@ -292,30 +292,60 @@ class RiserGeometryTest(unittest.TestCase):
 
     def assertPrintSupports(self, parts, riser, support):
         unsupported = riser.print_parts()
+        # Height from the bed to one gap below the 15.6718 mm neck plane.
+        height = (15.6718 - riser.split_gap) / 2 - support.gap
+        brim_height = support.brim_height if support.brim else 0
         for side, part, bare in zip((-1, 1), parts, unsupported):
             self.assertEqual(len(part.solids()), 2)
-            # The wall is the smaller solid; the half lands exactly as unsupported.
+            # The support is the smaller solid; the half lands as unsupported,
+            # moved only as far as a brim needs to keep the pair at the origin.
             wall, half = sorted(part.solids(), key=lambda solid: solid.volume)
-            self.assertLess(volume(half - bare), VOLUME_TOL)
-            self.assertLess(volume(bare - half), VOLUME_TOL)
-            # Height from the bed to one gap below the 15.6718 mm neck plane.
-            height = (15.6718 - riser.split_gap) / 2 - support.gap
-            self.assertAlmostEqual(wall.volume, support.wall * height * riser.bottom_length,
-                                   delta=VOLUME_TOL)
             bounds, half_bounds = wall.bounding_box(), half.bounding_box()
+            for axis in "XYZ":
+                self.assertAlmostEqual(min(getattr(bounds.min, axis), getattr(half_bounds.min, axis)),
+                                       0, delta=LINEAR_TOL)
+            shift = half_bounds.min - bare.bounding_box().min
+            if not support.brim:
+                self.assertAlmostEqual(shift.length, 0, delta=LINEAR_TOL)
+            moved = bare.translate(shift)
+            self.assertLess(volume(half - moved), VOLUME_TOL)
+            self.assertLess(volume(moved - half), VOLUME_TOL)
             self.assertAlmostEqual(bounds.min.Z, 0, delta=LINEAR_TOL)
             self.assertAlmostEqual(bounds.size.Z, height, delta=LINEAR_TOL)
-            self.assertAlmostEqual(bounds.size.X, support.wall, delta=LINEAR_TOL)
-            # Flush with the clamp bottom face and spanning the saddle along Y.
+            # The wall's top is flush with the clamp bottom face and spans the saddle.
             bottom = [f for f in half.faces() if abs(f.normal_at().X - side) < LINEAR_TOL
                       and abs(f.center().X - (half_bounds.min.X if side < 0 else half_bounds.max.X))
                       < LINEAR_TOL]
             self.assertEqual(len(bottom), 1)
-            face_bounds = bottom[0].bounding_box()
-            self.assertAlmostEqual(bounds.min.X if side < 0 else bounds.max.X,
-                                   face_bounds.min.X, delta=LINEAR_TOL)
-            self.assertAlmostEqual(bounds.min.Y, face_bounds.min.Y, delta=LINEAR_TOL)
-            self.assertAlmostEqual(bounds.max.Y, face_bounds.max.Y, delta=LINEAR_TOL)
+            jaw = bottom[0].bounding_box()
+            tops = [f for f in wall.faces() if abs(f.center().Z - height) < LINEAR_TOL]
+            self.assertEqual(len(tops), 1)
+            top = tops[0].bounding_box()
+            self.assertAlmostEqual(top.size.X, support.wall, delta=LINEAR_TOL)
+            self.assertAlmostEqual(top.min.X if side < 0 else top.max.X, jaw.min.X,
+                                   delta=LINEAR_TOL)
+            self.assertAlmostEqual(top.min.Y, jaw.min.Y, delta=LINEAR_TOL)
+            self.assertAlmostEqual(top.max.Y, jaw.max.Y, delta=LINEAR_TOL)
+            # Bed footprint: the wall alone, or a rectangle brim wide around it,
+            # except that the rail side stops 1 mm short of the half.
+            beds = [f for f in wall.faces() if abs(f.center().Z) < LINEAR_TOL]
+            self.assertEqual(len(beds), 1)
+            bed = beds[0].bounding_box()
+            self.assertAlmostEqual(beds[0].area, bed.size.X * bed.size.Y, delta=VOLUME_TOL)
+            outward = jaw.min.X - bed.min.X if side < 0 else bed.max.X - jaw.min.X
+            inward = bed.max.X - jaw.min.X if side < 0 else jaw.min.X - bed.min.X
+            self.assertAlmostEqual(outward, support.brim, delta=LINEAR_TOL)
+            self.assertAlmostEqual(bed.min.Y, jaw.min.Y - support.brim, delta=LINEAR_TOL)
+            self.assertAlmostEqual(bed.max.Y, jaw.max.Y + support.brim, delta=LINEAR_TOL)
+            clearance = beds[0].distance_to(half)
+            if inward < support.wall + support.brim - LINEAR_TOL:
+                self.assertAlmostEqual(clearance, 1.0, delta=LINEAR_TOL)
+            else:
+                self.assertAlmostEqual(inward, support.wall + support.brim, delta=LINEAR_TOL)
+                self.assertGreater(clearance, 1.0)
+            self.assertAlmostEqual(
+                wall.volume, beds[0].area * brim_height
+                + support.wall * riser.bottom_length * (height - brim_height), delta=VOLUME_TOL)
             # Exactly one gap clear of the half, and under the lip rather than beside it.
             self.assertAlmostEqual(wall.distance_to(half), support.gap, delta=LINEAR_TOL)
             raised = wall.translate((0, 0, support.gap + 0.05))
@@ -327,6 +357,12 @@ class RiserGeometryTest(unittest.TestCase):
             (self.default, pr.PrintSupport(wall=2.5, gap=0.12)),
             (pr.make_riser(bolt="M4", nut="M4", top_offset=-4, riser_height=25, split_gap=0.4),
              pr.PrintSupport(wall=0.8, gap=0.3)),
+            # Clipped on the rail side, then a brim that fits all round.
+            (self.default, pr.PrintSupport(brim=5)),
+            (pr.make_riser(bolt="M4", nut="M4", top_offset=-4, riser_height=25, split_gap=0.4),
+             pr.PrintSupport(wall=0.8, gap=0.3, brim=2, brim_height=0.3)),
+            # A saddle longer than the top rail: the brim also moves the pair along Y.
+            (pr.make_riser(bottom_slot_count=8, top_slot_count=3), pr.PrintSupport(brim=4)),
         ]
         for riser, support in cases:
             with self.subTest(support=support, split_gap=riser.split_gap):
@@ -356,14 +392,21 @@ class RiserGeometryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             command = [sys.executable, str(ROOT / "picatinny_riser.py"), "--bottom-slots", "2",
                        "--top-slots", "3", "--output-dir", directory]
-            result = subprocess.run(command + ["--support", "--support-wall", "0.8",
-                                               "--support-gap", "0.15"],
-                                    cwd=directory, capture_output=True, text=True)
-            self.assertEqual(result.returncode, 0, result.stderr)
             expected = pr.make_riser(bottom_slot_count=2, top_slot_count=3)
-            saved = [bd.import_step(Path(directory) / f"picatinny_riser_{name}.step")
-                     for name in ("left", "right")]
-            self.assertPrintSupports(saved, expected, pr.PrintSupport(wall=0.8, gap=0.15))
+            runs = (
+                (["--support", "--support-wall", "0.8", "--support-gap", "0.15",
+                  "--support-brim", "2.5", "--support-brim-height", "0.3"],
+                 pr.PrintSupport(wall=0.8, gap=0.15, brim=2.5, brim_height=0.3)),
+                # A bare --support-brim is a 5 mm brim and turns the support on.
+                (["--support-brim"], pr.PrintSupport(brim=5)),
+            )
+            for options, support in runs:
+                result = subprocess.run(command + options,
+                                        cwd=directory, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                saved = [bd.import_step(Path(directory) / f"picatinny_riser_{name}.step")
+                         for name in ("left", "right")]
+                self.assertPrintSupports(saved, expected, support)
             # Without the switch, the wall settings don't add a support.
             result = subprocess.run(command + ["--support-wall", "0.8"],
                                     cwd=directory, capture_output=True, text=True)
@@ -384,7 +427,9 @@ class RiserGeometryTest(unittest.TestCase):
         cases = [
             dict(wall=0), dict(wall=-1), dict(wall=math.nan), dict(wall=math.inf), dict(wall=True),
             dict(wall=2.99), dict(gap=0), dict(gap=-0.1), dict(gap=math.nan), dict(gap=True),
-            dict(gap=(15.6718 - r.split_gap) / 2),
+            dict(gap=(15.6718 - r.split_gap) / 2), dict(brim=-1), dict(brim=math.inf),
+            dict(brim=True), dict(brim_height=math.nan), dict(brim=2, brim_height=0),
+            dict(brim=2, brim_height=-0.1), dict(brim=2, brim_height=(15.6718 - r.split_gap) / 2 - 0.19),
         ]
         for kwargs in cases:
             with self.subTest(**kwargs), self.assertRaises(ValueError):
