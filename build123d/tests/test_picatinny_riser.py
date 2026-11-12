@@ -290,6 +290,108 @@ class RiserGeometryTest(unittest.TestCase):
             self.assertIsNone(r.right.parent)
             pr.export_riser(r, directory)
 
+    def assertPrintSupports(self, parts, riser, support):
+        unsupported = riser.print_parts()
+        for side, part, bare in zip((-1, 1), parts, unsupported):
+            self.assertEqual(len(part.solids()), 2)
+            # The wall is the smaller solid; the half lands exactly as unsupported.
+            wall, half = sorted(part.solids(), key=lambda solid: solid.volume)
+            self.assertLess(volume(half - bare), VOLUME_TOL)
+            self.assertLess(volume(bare - half), VOLUME_TOL)
+            # Height from the bed to one gap below the 15.6718 mm neck plane.
+            height = (15.6718 - riser.split_gap) / 2 - support.gap
+            self.assertAlmostEqual(wall.volume, support.wall * height * riser.bottom_length,
+                                   delta=VOLUME_TOL)
+            bounds, half_bounds = wall.bounding_box(), half.bounding_box()
+            self.assertAlmostEqual(bounds.min.Z, 0, delta=LINEAR_TOL)
+            self.assertAlmostEqual(bounds.size.Z, height, delta=LINEAR_TOL)
+            self.assertAlmostEqual(bounds.size.X, support.wall, delta=LINEAR_TOL)
+            # Flush with the clamp bottom face and spanning the saddle along Y.
+            bottom = [f for f in half.faces() if abs(f.normal_at().X - side) < LINEAR_TOL
+                      and abs(f.center().X - (half_bounds.min.X if side < 0 else half_bounds.max.X))
+                      < LINEAR_TOL]
+            self.assertEqual(len(bottom), 1)
+            face_bounds = bottom[0].bounding_box()
+            self.assertAlmostEqual(bounds.min.X if side < 0 else bounds.max.X,
+                                   face_bounds.min.X, delta=LINEAR_TOL)
+            self.assertAlmostEqual(bounds.min.Y, face_bounds.min.Y, delta=LINEAR_TOL)
+            self.assertAlmostEqual(bounds.max.Y, face_bounds.max.Y, delta=LINEAR_TOL)
+            # Exactly one gap clear of the half, and under the lip rather than beside it.
+            self.assertAlmostEqual(wall.distance_to(half), support.gap, delta=LINEAR_TOL)
+            raised = wall.translate((0, 0, support.gap + 0.05))
+            self.assertGreater(overlap(half, raised), 0.01)
+
+    def test_print_support(self):
+        cases = [
+            (self.default, pr.PrintSupport()),
+            (self.default, pr.PrintSupport(wall=2.5, gap=0.12)),
+            (pr.make_riser(bolt="M4", nut="M4", top_offset=-4, riser_height=25, split_gap=0.4),
+             pr.PrintSupport(wall=0.8, gap=0.3)),
+        ]
+        for riser, support in cases:
+            with self.subTest(support=support, split_gap=riser.split_gap):
+                parts = riser.print_parts(support)
+                self.assertPrintSupports(parts, riser, support)
+                self.assertEqual([part.label for part in parts],
+                                 ["left_socket_half", "right_nut_half"])
+        self.assertIsNone(self.default.left.parent)
+        for part in self.default.print_parts():
+            self.assertEqual(len(part.solids()), 1)
+
+    def test_print_support_export(self):
+        r = self.default
+        support = pr.PrintSupport(wall=1.2, gap=0.16)
+        with tempfile.TemporaryDirectory() as bare, tempfile.TemporaryDirectory() as directory:
+            plain = pr.export_riser(r, bare)
+            paths = pr.export_riser(r, directory, support)
+            assembly = bd.import_step(paths[0])
+            self.assertEqual(len(assembly.solids()), 2)
+            self.assertAlmostEqual(assembly.volume, r.left.volume + r.right.volume, delta=VOLUME_TOL)
+            saved = [bd.import_step(paths[i]) for i in (1, 3)]
+            self.assertPrintSupports(saved, r, support)
+            for i in (2, 4):
+                self.assertGreater(paths[i].stat().st_size, plain[i].stat().st_size)
+
+    def test_cli_print_support(self):
+        with tempfile.TemporaryDirectory() as directory:
+            command = [sys.executable, str(ROOT / "picatinny_riser.py"), "--bottom-slots", "2",
+                       "--top-slots", "3", "--output-dir", directory]
+            result = subprocess.run(command + ["--support", "--support-wall", "0.8",
+                                               "--support-gap", "0.15"],
+                                    cwd=directory, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            expected = pr.make_riser(bottom_slot_count=2, top_slot_count=3)
+            saved = [bd.import_step(Path(directory) / f"picatinny_riser_{name}.step")
+                     for name in ("left", "right")]
+            self.assertPrintSupports(saved, expected, pr.PrintSupport(wall=0.8, gap=0.15))
+            # Without the switch, the wall settings don't add a support.
+            result = subprocess.run(command + ["--support-wall", "0.8"],
+                                    cwd=directory, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            saved = bd.import_step(Path(directory) / "picatinny_riser_left.step")
+            self.assertEqual(len(saved.solids()), 1)
+            # Bad support values are usage errors, before anything is written.
+            empty = Path(directory) / "rejected"
+            result = subprocess.run(command[:-1] + [str(empty), "--support", "--support-gap", "0"],
+                                    cwd=directory, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("support gap", result.stderr)
+            self.assertFalse(empty.exists())
+
+    def test_invalid_print_support(self):
+        r = self.default
+        # The default lower jaw is 6.0472 - 3.0607 = 2.9865 mm deep along the wall.
+        cases = [
+            dict(wall=0), dict(wall=-1), dict(wall=math.nan), dict(wall=math.inf), dict(wall=True),
+            dict(wall=2.99), dict(gap=0), dict(gap=-0.1), dict(gap=math.nan), dict(gap=True),
+            dict(gap=(15.6718 - r.split_gap) / 2),
+        ]
+        for kwargs in cases:
+            with self.subTest(**kwargs), self.assertRaises(ValueError):
+                r.print_parts(pr.PrintSupport(**kwargs))
+            with tempfile.TemporaryDirectory() as directory, self.assertRaises(ValueError):
+                pr.export_riser(r, Path(directory) / "out", pr.PrintSupport(**kwargs))
+
     def test_cli_from_another_directory(self):
         with tempfile.TemporaryDirectory() as directory:
             result = subprocess.run(

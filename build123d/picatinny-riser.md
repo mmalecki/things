@@ -23,6 +23,9 @@ uv run python picatinny_riser.py --bottom-slots 5 --top-slots 7 \
 uv run python picatinny_riser.py --bottom-slots 5 --top-slots 3 \
   --bolt-slots 1 3 5 --bolt M4 --height 22 --top-offset 5 \
   --output-dir /tmp/picatinny-riser-m4
+
+# Print exports with a support wall under each lower jaw lip:
+uv run python picatinny_riser.py --support --support-wall 1.2 --support-gap 0.2
 ```
 
 Exports (ignored by Git, following this repository's artifact policy):
@@ -30,8 +33,8 @@ Exports (ignored by Git, following this repository's artifact policy):
 | File | Coordinates / purpose |
 | --- | --- |
 | `picatinny_riser.step` | Two labeled solids in their assembled positions |
-| `picatinny_riser_left.step`, `.stl` | Socket half, split face down on Z=0 |
-| `picatinny_riser_right.step`, `.stl` | Nut half, split face down on Z=0 |
+| `picatinny_riser_left.step`, `.stl` | Socket half, split face down on Z=0; with `--support`, plus its support wall |
+| `picatinny_riser_right.step`, `.stl` | Nut half, split face down on Z=0; with `--support`, plus its support wall |
 
 Both printable files start at X=Y=Z=0 and must be arranged separately on the
 slicer bed; they are **not** an already-spaced print plate. By default outputs
@@ -46,7 +49,7 @@ Importing the module does not create geometry, write files, or contact a viewer.
 
 ```python
 from bd_buildabolt import bolt_data, nut_data
-from picatinny_riser import make_riser, export_riser
+from picatinny_riser import PrintSupport, make_riser, export_riser
 
 riser = make_riser(
     bottom_slot_count=6,
@@ -60,8 +63,10 @@ riser = make_riser(
 )
 left, right = riser.left, riser.right        # assembly coordinates
 print_left, print_right = riser.print_parts()
+supported_left, supported_right = riser.print_parts(PrintSupport(wall=1.2, gap=0.2))
 assembly = riser.assembly()
 export_riser(riser, "/tmp/picatinny-riser-custom")
+export_riser(riser, "/tmp/picatinny-riser-supported", support=PrintSupport())
 ```
 
 All lengths are **millimetres**. Y follows the barrel/rail axis, X is transverse,
@@ -134,6 +139,32 @@ Larger values are rejected rather than silently reduced; if decreasing
 `min_wall`, also decrease `bottom_chamfer`. The remaining unchamfered floor and
 all overall dimensions are unchanged.
 
+## Print support
+
+Split face down, each lower jaw lip prints as an island hanging about 7.7 mm
+above the bed. Its lowest edge is the narrow neck land (0.22 mm with the
+defaults, a knife edge when the jaw ends at the neck) followed by the 45° lower
+flank. Slicers generally treat a region that thin as needing no support, so the
+lip's first layers print into air. `--support` (Python: `PrintSupport`) adds
+a detached, rectangular wall beneath each lip to the split-face-down STEP/STL
+exports only; the assembly STEP and the fitted halves are unchanged.
+
+| `PrintSupport` field | CLI option | Default | Meaning |
+| --- | --- | --- | --- |
+| `wall` | `--support-wall` | `1.0` | Wall thickness, measured from the clamp bottom face (flush with it) toward the rail |
+| `gap` | `--support-gap` | `0.2` | Empty separation between the wall top and the lip's lowest edge |
+
+The wall stands on the bed and runs the full saddle length. Its top is flat, one
+gap below the lip's lowest edge. A top following the 45° flank would sit only
+one gap away sideways in the layers the flank prints in, and slicers fuse
+perimeters that close. Set `gap` to your layer height for a single empty
+separation layer, then confirm that layer in the slicer preview: the lip edge
+need not fall on a layer boundary. `wall` must be positive and keep the wall
+under the lower jaw (at most 2.9865 mm with default hardware); `gap` must be
+positive and leave the wall some height. Both files then contain two bodies:
+keep them as one object on the bed and don't let the slicer generate support
+there as well. Snap the wall off after printing.
+
 ## Rail profile and fit
 
 The existing `picatinny-sling-point.py` informed the clamp and fastener workflow.
@@ -173,8 +204,9 @@ from the outside, so no printed internal threads or inserts are required. The
 assembly STEP contains the two printed pieces, not cosmetic hardware models.
 
 The split-face-down exports keep the fastener axes vertical for printing and
-put the large flat split faces on the bed. Inspect the lower-clamp overhang in
-your slicer and add support where required by your process. Compensate for
+put the large flat split faces on the bed. The lower jaw lip then overhangs;
+export with `--support` (see [Print support](#print-support)) or support it
+in your slicer. Compensate for
 printer calibration/elephant's foot rather than assuming a universal material,
 shrink factor, support setting, or torque. This is an **unload-tested prototype**:
 physical fit, creep, clamp force, retention under vibration/recoil, and strength
@@ -198,5 +230,8 @@ clearance, including checks on the reimported assembly STEP. Chamfer checks
 measure the two 45° faces, equal legs, full Y length, removed triangular-prism
 volumes and remaining pocket lip thickness, including CLI and STEP round trips.
 Print-orientation checks compare the actual split-face area with the face on
-Z=0. Geometric comparisons use 1e-6 mm and 1e-5 mm³ tolerances. These are numerical
+Z=0. Support checks confirm the halves land as without support and measure each
+wall's volume, bed contact, flush bottom face, saddle length, and exact gap to
+the lip, which it sits directly beneath; they cover CLI and STEP round trips and
+rejected thicknesses and gaps. Geometric comparisons use 1e-6 mm and 1e-5 mm³ tolerances. These are numerical
 check thresholds, not achievable manufacturing tolerances.

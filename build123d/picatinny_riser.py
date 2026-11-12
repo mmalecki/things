@@ -36,6 +36,19 @@ NECK_DEPTH = LOWER_CONTACT_DEPTH + (CONTACT_WIDTH - NECK_WIDTH) / 2
 
 
 @dataclass(frozen=True)
+class PrintSupport:
+    """Detached wall under each lower jaw lip of the split-face-down halves.
+
+    The lip starts as a sub-millimetre island in that orientation, which
+    slicers don't support. wall is the thickness from the clamp bottom face toward the
+    rail; gap is the empty separation under the lip, normally one layer height.
+    """
+
+    wall: float = 1.0
+    gap: float = 0.2
+
+
+@dataclass(frozen=True)
 class Riser:
     """Printable halves in assembly coordinates, plus manufacturing datums."""
 
@@ -45,6 +58,7 @@ class Riser:
     top_slots: tuple[float, ...]
     bolt_slots: tuple[int, ...]
     bolt_z: float
+    bottom_z: float
     bottom_length: float
     top_length: float
     body_width: float
@@ -57,13 +71,35 @@ class Riser:
         return bd.Compound(children=[part.moved(bd.Location()) for part in (self.left, self.right)],
                            label="picatinny_riser")
 
-    def print_parts(self) -> tuple[bd.Shape, bd.Shape]:
-        """Lay each flat split face on Z=0 without changing the fitted geometry."""
+    def print_parts(self, support: PrintSupport | None = None) -> tuple[bd.Shape, bd.Shape]:
+        """Lay each flat split face on Z=0 without changing the fitted geometry.
+
+        With support, each half becomes a compound of the half and its wall.
+        """
+        if support is not None:
+            _finite(support.wall, "support wall")
+            _finite(support.gap, "support gap")
+            # Past the lower jaw the wall would run toward the bed-touching roof.
+            if not 0 < support.wall <= -LOWER_CORNER_DEPTH - self.bottom_z:
+                raise ValueError("support wall must be positive and stay under the lower jaw")
+            if not 0 < support.gap < (NECK_WIDTH - self.split_gap) / 2:
+                raise ValueError("support gap must be positive and below the lower jaw lip")
         parts = []
-        for part, angle in ((self.left, 90), (self.right, -90)):
+        for part, angle, side in ((self.left, 90, -1), (self.right, -90, 1)):
             placed = part.rotate(bd.Axis.Y, angle)
-            placed = placed.translate(-placed.bounding_box().min)
+            offset = -placed.bounding_box().min
+            placed = placed.translate(offset)
             placed.label = part.label
+            if support is not None:
+                # The lip's lowest points are on the neck plane; a flat top keeps
+                # the wall out of every layer the 45-degree flank prints in.
+                inner, outer = self.split_gap / 2, NECK_WIDTH / 2 - support.gap
+                wall = (bd.Pos(side * (inner + outer) / 2, 0, self.bottom_z + support.wall / 2)
+                        * bd.Box(outer - inner, self.bottom_length, support.wall))
+                wall = wall.rotate(bd.Axis.Y, angle).translate(offset)
+                wall.label = f"{part.label}_support"
+                wall.color = bd.Color(0.9, 0.55, 0.2)
+                placed = bd.Compound(children=[placed, wall], label=part.label)
             parts.append(placed)
         return tuple(parts)
 
@@ -281,7 +317,7 @@ def make_riser(
     left.color, right.color = bd.Color(0.35, 0.45, 0.55), bd.Color(0.6, 0.65, 0.7)
     return Riser(
         left=left, right=right, bottom_slots=bottom_slots, top_slots=top_slots,
-        bolt_slots=selected, bolt_z=bolt_z, bottom_length=bottom_length,
+        bolt_slots=selected, bolt_z=bolt_z, bottom_z=bottom_z, bottom_length=bottom_length,
         top_length=top_length, body_width=width, riser_height=riser_height,
         split_gap=split_gap,
         # The nut seats on its pocket floor, bolt_fit inside the outer face.
@@ -289,14 +325,19 @@ def make_riser(
     )
 
 
-def export_riser(riser: Riser, directory: str | Path) -> tuple[Path, ...]:
-    """Export assembly STEP and separate, split-face-down STEP/STL halves."""
+def export_riser(riser: Riser, directory: str | Path,
+                 support: PrintSupport | None = None) -> tuple[Path, ...]:
+    """Export assembly STEP and separate, split-face-down STEP/STL halves.
+
+    support adds each half's print support wall to its STEP/STL only.
+    """
     directory = Path(directory)
+    print_parts = riser.print_parts(support)
     directory.mkdir(parents=True, exist_ok=True)
     assembly_path = directory / "picatinny_riser.step"
     bd.export_step(riser.assembly(), assembly_path)
     paths = [assembly_path]
-    for name, part in zip(("left", "right"), riser.print_parts()):
+    for name, part in zip(("left", "right"), print_parts):
         for extension, exporter in (("step", bd.export_step), ("stl", bd.export_stl)):
             path = directory / f"picatinny_riser_{name}.{extension}"
             exporter(part, path)
@@ -318,17 +359,26 @@ def main() -> None:
     parser.add_argument("--split-gap", type=float, default=0.1)
     parser.add_argument("--bottom-chamfer", type=float, default=1.0,
                         help="45-degree outside bottom Y-edge chamfer, mm; 0 disables")
+    parser.add_argument("--support", action="store_true",
+                        help="add a detached support wall under each half's lower jaw lip "
+                             "to the print exports")
+    parser.add_argument("--support-wall", type=float, default=PrintSupport.wall,
+                        help="support thickness from the clamp bottom face toward the rail, mm")
+    parser.add_argument("--support-gap", type=float, default=PrintSupport.gap,
+                        help="empty separation under the lip, mm; use one layer height")
     parser.add_argument("--output-dir", type=Path, default=Path(__file__).resolve().parent)
     parser.add_argument("--show", action="store_true", help="also open in OCP Viewer")
     args = parser.parse_args()
+    support = PrintSupport(args.support_wall, args.support_gap) if args.support else None
     try:
         riser = make_riser(args.bottom_slots, args.top_slots, args.bolt_slots, args.bolt,
                            args.nut or args.bolt, args.height,
                            top_offset=args.top_offset, bolt_fit=args.bolt_fit,
                            split_gap=args.split_gap, bottom_chamfer=args.bottom_chamfer)
+        paths = export_riser(riser, args.output_dir, support)
     except (ValueError, KeyError) as error:
         parser.error(str(error))
-    for path in export_riser(riser, args.output_dir):
+    for path in paths:
         print(path)
     print(f"Minimum under-head bolt length for full nut engagement: "
           f"{riser.minimum_bolt_length:.2f} mm (verify protrusion after tightening)")
